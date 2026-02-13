@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Get the datasheet record
     const { data: datasheet, error: fetchError } = await supabaseAdmin
-      .from('ft_datasheets')
+      .from('ds_datasheets')
       .select('*')
       .eq('id', datasheetId)
       .single()
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Update processing job to 'processing'
     await supabaseAdmin
-      .from('ft_processing_jobs')
+      .from('ds_processing_jobs')
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
@@ -240,7 +240,7 @@ export async function POST(request: NextRequest) {
     } catch {
       // If JSON parsing fails, update with error
       await supabaseAdmin
-        .from('ft_datasheets')
+        .from('ds_datasheets')
         .update({
           status: 'error',
           error_message: 'Failed to parse extracted data as JSON',
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
         .eq('id', datasheetId)
 
       await supabaseAdmin
-        .from('ft_processing_jobs')
+        .from('ds_processing_jobs')
         .update({
           status: 'failed',
           error: 'JSON parse error',
@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
 
     // 7. Update the datasheet with extracted data
     const { error: updateError } = await supabaseAdmin
-      .from('ft_datasheets')
+      .from('ds_datasheets')
       .update(updateData)
       .eq('id', datasheetId)
 
@@ -306,7 +306,7 @@ export async function POST(request: NextRequest) {
 
     // 8. Update processing job to completed
     await supabaseAdmin
-      .from('ft_processing_jobs')
+      .from('ds_processing_jobs')
       .update({
         status: 'completed',
         output_data: extractedData,
@@ -316,7 +316,7 @@ export async function POST(request: NextRequest) {
       .eq('job_type', 'extraction')
 
     // 9. Log the activity
-    await supabaseAdmin.from('ft_activity_log').insert({
+    await supabaseAdmin.from('ds_activity_log').insert({
       tenant_id: datasheet.tenant_id,
       datasheet_id: datasheetId,
       action: 'extracted',
@@ -344,7 +344,7 @@ export async function POST(request: NextRequest) {
       if (body.datasheetId) {
         const errorSupabase = getSupabaseAdmin()
         await errorSupabase
-          .from('ft_datasheets')
+          .from('ds_datasheets')
           .update({
             status: 'error',
             error_message:
@@ -354,7 +354,7 @@ export async function POST(request: NextRequest) {
           .eq('id', body.datasheetId)
 
         await errorSupabase
-          .from('ft_processing_jobs')
+          .from('ds_processing_jobs')
           .update({
             status: 'failed',
             error: error instanceof Error ? error.message : 'Unknown error',

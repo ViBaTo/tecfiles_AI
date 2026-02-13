@@ -109,7 +109,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
         const { data: user } = await supabase.auth.getUser()
 
         const { data: datasheet, error: dsError } = await supabase
-          .from('ft_datasheets')
+          .from('ds_datasheets')
           .insert({
             tenant_id: tenantId,
             source_file_url: urlData.publicUrl,
@@ -135,7 +135,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
 
         // 4. Create processing job
         const { error: jobError } = await supabase
-          .from('ft_processing_jobs')
+          .from('ds_processing_jobs')
           .insert({
             tenant_id: tenantId,
             datasheet_id: datasheet.id,
@@ -149,7 +149,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
 
         // 5. Update datasheet status to extracting
         await supabase
-          .from('ft_datasheets')
+          .from('ds_datasheets')
           .update({ status: 'extracting' as const })
           .eq('id', datasheet.id)
 

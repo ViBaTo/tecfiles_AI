@@ -1,5 +1,5 @@
 // ==============================================
-// AIVO Fichas Técnicas - TypeScript Types
+// AIVO Dossier - TypeScript Types
 // ==============================================
 
 export type Json =
@@ -14,7 +14,7 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
-      ft_tenants: {
+      ds_tenants: {
         Row: {
           id: string;
           name: string;
@@ -61,7 +61,7 @@ export interface Database {
           updated_at?: string;
         };
       };
-      ft_tenant_users: {
+      ds_tenant_users: {
         Row: {
           id: string;
           tenant_id: string;
@@ -84,7 +84,7 @@ export interface Database {
           created_at?: string;
         };
       };
-      ft_data_schemas: {
+      ds_data_schemas: {
         Row: {
           id: string;
           tenant_id: string;
@@ -119,7 +119,7 @@ export interface Database {
           updated_at?: string;
         };
       };
-      ft_templates: {
+      ds_templates: {
         Row: {
           id: string;
           tenant_id: string;
@@ -160,7 +160,7 @@ export interface Database {
           updated_at?: string;
         };
       };
-      ft_datasheets: {
+      ds_datasheets: {
         Row: {
           id: string;
           tenant_id: string;
@@ -243,7 +243,7 @@ export interface Database {
           updated_at?: string;
         };
       };
-      ft_processing_jobs: {
+      ds_processing_jobs: {
         Row: {
           id: string;
           tenant_id: string;
@@ -290,7 +290,7 @@ export interface Database {
           created_at?: string;
         };
       };
-      ft_batch_jobs: {
+      ds_batch_jobs: {
         Row: {
           id: string;
           tenant_id: string;
@@ -331,7 +331,7 @@ export interface Database {
           created_at?: string;
         };
       };
-      ft_activity_log: {
+      ds_activity_log: {
         Row: {
           id: string;
           tenant_id: string;
@@ -380,24 +380,24 @@ export type DatasheetStatus =
 export type UserRole = "admin" | "editor" | "reviewer";
 
 // Helper types for easier access
-export type Tenant = Database["public"]["Tables"]["ft_tenants"]["Row"];
-export type TenantInsert = Database["public"]["Tables"]["ft_tenants"]["Insert"];
+export type Tenant = Database["public"]["Tables"]["ds_tenants"]["Row"];
+export type TenantInsert = Database["public"]["Tables"]["ds_tenants"]["Insert"];
 
-export type TenantUser = Database["public"]["Tables"]["ft_tenant_users"]["Row"];
+export type TenantUser = Database["public"]["Tables"]["ds_tenant_users"]["Row"];
 
-export type DataSchema = Database["public"]["Tables"]["ft_data_schemas"]["Row"];
+export type DataSchema = Database["public"]["Tables"]["ds_data_schemas"]["Row"];
 
-export type Template = Database["public"]["Tables"]["ft_templates"]["Row"];
+export type Template = Database["public"]["Tables"]["ds_templates"]["Row"];
 
-export type Datasheet = Database["public"]["Tables"]["ft_datasheets"]["Row"];
-export type DatasheetInsert = Database["public"]["Tables"]["ft_datasheets"]["Insert"];
-export type DatasheetUpdate = Database["public"]["Tables"]["ft_datasheets"]["Update"];
+export type Datasheet = Database["public"]["Tables"]["ds_datasheets"]["Row"];
+export type DatasheetInsert = Database["public"]["Tables"]["ds_datasheets"]["Insert"];
+export type DatasheetUpdate = Database["public"]["Tables"]["ds_datasheets"]["Update"];
 
-export type ProcessingJob = Database["public"]["Tables"]["ft_processing_jobs"]["Row"];
+export type ProcessingJob = Database["public"]["Tables"]["ds_processing_jobs"]["Row"];
 
-export type BatchJob = Database["public"]["Tables"]["ft_batch_jobs"]["Row"];
+export type BatchJob = Database["public"]["Tables"]["ds_batch_jobs"]["Row"];
 
-export type ActivityLog = Database["public"]["Tables"]["ft_activity_log"]["Row"];
+export type ActivityLog = Database["public"]["Tables"]["ds_activity_log"]["Row"];
 
 // ==============================================
 // Schema Field Definition

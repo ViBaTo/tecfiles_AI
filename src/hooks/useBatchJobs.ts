@@ -27,7 +27,7 @@ export function useBatchJobs(options: UseBatchJobsOptions = {}) {
     setError(null)
 
     const { data, error: fetchError } = await supabase
-      .from('ft_batch_jobs')
+      .from('ds_batch_jobs')
       .select('*')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
@@ -58,7 +58,7 @@ export function useBatchJobs(options: UseBatchJobsOptions = {}) {
         {
           event: '*',
           schema: 'public',
-          table: 'ft_batch_jobs',
+          table: 'ds_batch_jobs',
           filter: `tenant_id=eq.${tenantId}`
         },
         () => {
@@ -79,7 +79,7 @@ export function useBatchJobs(options: UseBatchJobsOptions = {}) {
       const { data: user } = await supabase.auth.getUser()
 
       const { data, error: insertError } = await supabase
-        .from('ft_batch_jobs')
+        .from('ds_batch_jobs')
         .insert({
           tenant_id: tenantId,
           name,

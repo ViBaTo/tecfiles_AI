@@ -28,7 +28,7 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
     setError(null);
 
     let query = supabase
-      .from("ft_datasheets")
+      .from("ds_datasheets")
       .select("*")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
@@ -69,7 +69,7 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
         {
           event: "*",
           schema: "public",
-          table: "ft_datasheets",
+          table: "ds_datasheets",
           filter: `tenant_id=eq.${tenantId}`,
         },
         () => {
@@ -108,7 +108,7 @@ export function useDatasheet(id: string | null) {
     setError(null);
 
     const { data, error: fetchError } = await supabase
-      .from("ft_datasheets")
+      .from("ds_datasheets")
       .select("*")
       .eq("id", id)
       .single();
@@ -132,7 +132,7 @@ export function useDatasheet(id: string | null) {
       if (!id) return { error: "No datasheet ID" };
 
       const { error: updateError } = await supabase
-        .from("ft_datasheets")
+        .from("ds_datasheets")
         .update(updates)
         .eq("id", id);
 

@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Get the datasheet record
     const { data: datasheet, error: fetchError } = await supabaseAdmin
-      .from('ft_datasheets')
+      .from('ds_datasheets')
       .select('*')
       .eq('id', datasheetId)
       .single()
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Create or update processing job
     const existingJob = await supabaseAdmin
-      .from('ft_processing_jobs')
+      .from('ds_processing_jobs')
       .select('id')
       .eq('datasheet_id', datasheetId)
       .eq('job_type', 'generation')
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     if (existingJob.data) {
       await supabaseAdmin
-        .from('ft_processing_jobs')
+        .from('ds_processing_jobs')
         .update({
           status: 'processing',
           started_at: new Date().toISOString(),
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', existingJob.data.id)
     } else {
-      await supabaseAdmin.from('ft_processing_jobs').insert({
+      await supabaseAdmin.from('ds_processing_jobs').insert({
         tenant_id: datasheet.tenant_id,
         datasheet_id: datasheetId,
         job_type: 'generation',
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
       (datasheet.generation_metadata as Record<string, unknown>) || {}
 
     const { error: updateError } = await supabaseAdmin
-      .from('ft_datasheets')
+      .from('ds_datasheets')
       .update({
         generated_description: generatedDescription,
         description_language: language,
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // 6. Update processing job to completed
     await supabaseAdmin
-      .from('ft_processing_jobs')
+      .from('ds_processing_jobs')
       .update({
         status: 'completed',
         output_data: {
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
       .eq('job_type', 'generation')
 
     // 7. Log the activity
-    await supabaseAdmin.from('ft_activity_log').insert({
+    await supabaseAdmin.from('ds_activity_log').insert({
       tenant_id: datasheet.tenant_id,
       datasheet_id: datasheetId,
       action: 'description_generated',
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
       if (body.datasheetId) {
         const errorSupabase = getSupabaseAdmin()
         await errorSupabase
-          .from('ft_processing_jobs')
+          .from('ds_processing_jobs')
           .update({
             status: 'failed',
             error: error instanceof Error ? error.message : 'Unknown error',

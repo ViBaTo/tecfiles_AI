@@ -26,7 +26,7 @@ export function useTemplates(options: UseTemplatesOptions = {}) {
     setError(null)
 
     const { data, error: fetchError } = await supabase
-      .from('ft_templates')
+      .from('ds_templates')
       .select('*')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
@@ -56,7 +56,7 @@ export function useTemplates(options: UseTemplatesOptions = {}) {
         {
           event: '*',
           schema: 'public',
-          table: 'ft_templates',
+          table: 'ds_templates',
           filter: `tenant_id=eq.${tenantId}`
         },
         () => {

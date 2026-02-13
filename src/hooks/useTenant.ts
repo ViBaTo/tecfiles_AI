@@ -35,10 +35,10 @@ export function useTenant(): TenantContext {
 
       // Get all tenant memberships for the user
       const { data: memberships, error: membershipError } = await supabase
-        .from("ft_tenant_users")
+        .from("ds_tenant_users")
         .select(`
           *,
-          tenant:ft_tenants(*)
+          tenant:ds_tenants(*)
         `)
         .eq("user_id", user.id);
 

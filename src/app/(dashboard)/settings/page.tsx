@@ -47,7 +47,7 @@ export default function SettingsPage() {
     setSaved(false);
 
     const { error: updateError } = await supabase
-      .from("ft_tenants")
+      .from("ds_tenants")
       .update({
         name,
         brand_colors: {

@@ -36,7 +36,7 @@ export function useTenantUsers(options: UseTenantUsersOptions = {}) {
     setLoading(true)
     setError(null)
 
-    const { data, error: fetchError } = await supabase.rpc('get_tenant_users', {
+    const { data, error: fetchError } = await supabase.rpc('ds_get_tenant_users', {
       p_tenant_id: tenantId
     })
 
@@ -65,7 +65,7 @@ export function useTenantUsers(options: UseTenantUsersOptions = {}) {
         {
           event: '*',
           schema: 'public',
-          table: 'ft_tenant_users',
+          table: 'ds_tenant_users',
           filter: `tenant_id=eq.${tenantId}`
         },
         () => {
@@ -82,7 +82,7 @@ export function useTenantUsers(options: UseTenantUsersOptions = {}) {
   const updateRole = useCallback(
     async (membershipId: string, newRole: UserRole) => {
       const { error: updateError } = await supabase
-        .from('ft_tenant_users')
+        .from('ds_tenant_users')
         .update({ role: newRole })
         .eq('id', membershipId)
 
@@ -103,7 +103,7 @@ export function useTenantUsers(options: UseTenantUsersOptions = {}) {
   const removeUser = useCallback(
     async (membershipId: string) => {
       const { error: deleteError } = await supabase
-        .from('ft_tenant_users')
+        .from('ds_tenant_users')
         .delete()
         .eq('id', membershipId)
 
