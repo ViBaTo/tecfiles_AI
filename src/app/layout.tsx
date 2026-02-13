@@ -1,24 +1,20 @@
 import type { Metadata } from "next";
-import { Sora, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Header } from "@/components/layout/Header";
 
-const sora = Sora({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sora",
-  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-inter",
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500"],
+  variable: "--font-jetbrains-mono",
 });
 
 export const metadata: Metadata = {
-  title: "AIVO - Fichas Técnicas",
-  description: "Generador de fichas técnicas con IA para catálogos de producto",
+  title: "Dossier by VIBATO",
+  description: "Generador automático de fichas técnicas con IA",
 };
 
 export default function RootLayout({
@@ -28,18 +24,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={`${sora.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
-        <div className="flex h-screen bg-white overflow-hidden">
-          <Sidebar />
-          <main className="flex-1 flex flex-col overflow-hidden">
-            <Header />
-            <div className="flex-1 overflow-y-auto bg-gray-50/50">
-              <div className="max-w-6xl mx-auto px-6 py-8">
-                {children}
-              </div>
-            </div>
-          </main>
-        </div>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} ${inter.className}`}>
+        {children}
       </body>
     </html>
   );

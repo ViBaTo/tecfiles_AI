@@ -1,33 +1,38 @@
-import { TrendingUp, LucideIcon } from "lucide-react";
+"use client";
+
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 
 interface StatCardProps {
-  icon: LucideIcon;
   label: string;
-  value: string;
+  value: string | number;
   trend?: string;
-  color: string;
+  trendDirection?: "up" | "down" | "neutral";
 }
 
-export function StatCard({ icon: Icon, label, value, trend, color }: StatCardProps) {
+export function StatCard({ label, value, trend, trendDirection = "neutral" }: StatCardProps) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-medium transition-all duration-300 group">
-      <div className="flex items-start justify-between">
+    <div className="bg-white border border-slate-200 rounded-lg p-5">
+      <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+        {label}
+      </div>
+      <div className="text-2xl font-semibold text-slate-900 tabular-nums mt-1">
+        {value}
+      </div>
+      {trend && (
         <div
-          className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105"
-          style={{ backgroundColor: `${color}10` }}
+          className={`flex items-center gap-1 text-xs font-medium mt-2 ${
+            trendDirection === "up"
+              ? "text-emerald-600"
+              : trendDirection === "down"
+                ? "text-red-600"
+                : "text-slate-400"
+          }`}
         >
-          <Icon size={20} style={{ color }} strokeWidth={1.5} />
+          {trendDirection === "up" && <ArrowUpRight size={14} strokeWidth={1.5} />}
+          {trendDirection === "down" && <ArrowDownRight size={14} strokeWidth={1.5} />}
+          {trend}
         </div>
-        {trend && (
-          <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full flex items-center gap-1">
-            <TrendingUp size={12} /> {trend}
-          </span>
-        )}
-      </div>
-      <div className="mt-4">
-        <div className="text-2xl font-bold text-gray-900">{value}</div>
-        <div className="text-sm text-gray-500 mt-1 font-medium">{label}</div>
-      </div>
+      )}
     </div>
   );
 }

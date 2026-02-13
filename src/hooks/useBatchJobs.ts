@@ -1,0 +1,109 @@
+'use client'
+
+import { useEffect, useState, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { BatchJob } from '@/lib/supabase/types'
+
+interface UseBatchJobsOptions {
+  tenantId?: string
+  limit?: number
+}
+
+export function useBatchJobs(options: UseBatchJobsOptions = {}) {
+  const { tenantId, limit = 50 } = options
+  const [batches, setBatches] = useState<BatchJob[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const supabase = createClient()
+
+  const fetchBatches = useCallback(async () => {
+    if (!tenantId) {
+      setBatches([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    const { data, error: fetchError } = await supabase
+      .from('ft_batch_jobs')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (fetchError) {
+      setError(fetchError.message)
+      setBatches([])
+    } else {
+      setBatches(data || [])
+    }
+
+    setLoading(false)
+  }, [tenantId, limit, supabase])
+
+  useEffect(() => {
+    fetchBatches()
+  }, [fetchBatches])
+
+  // Real-time subscription for status updates
+  useEffect(() => {
+    if (!tenantId) return
+
+    const channel = supabase
+      .channel('batch_jobs_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ft_batch_jobs',
+          filter: `tenant_id=eq.${tenantId}`
+        },
+        () => {
+          fetchBatches()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [tenantId, supabase, fetchBatches])
+
+  const createBatch = useCallback(
+    async (name: string, totalFiles: number) => {
+      if (!tenantId) return { error: 'No tenant ID' }
+
+      const { data: user } = await supabase.auth.getUser()
+
+      const { data, error: insertError } = await supabase
+        .from('ft_batch_jobs')
+        .insert({
+          tenant_id: tenantId,
+          name,
+          total_files: totalFiles,
+          status: 'pending' as const,
+          created_by: user.user?.id || null
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        return { error: insertError.message, data: null }
+      }
+
+      return { error: null, data }
+    },
+    [tenantId, supabase]
+  )
+
+  return {
+    batches,
+    loading,
+    error,
+    refetch: fetchBatches,
+    createBatch
+  }
+}
