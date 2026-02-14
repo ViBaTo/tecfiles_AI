@@ -93,7 +93,7 @@ async function renderPdfPageToImage(
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, viewport, canvas } as unknown as Parameters<typeof page.render>[0]).promise;
 
     return canvas.toDataURL("image/jpeg", 0.85);
   } catch (err) {

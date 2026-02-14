@@ -2,11 +2,12 @@
 
 interface SkeletonProps {
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export function Skeleton({ className = "" }: SkeletonProps) {
+export function Skeleton({ className = "", style }: SkeletonProps) {
   return (
-    <div className={`bg-slate-100 animate-pulse rounded-md ${className}`} />
+    <div className={`bg-slate-100 animate-pulse rounded-md ${className}`} style={style} />
   );
 }
 
