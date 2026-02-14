@@ -149,6 +149,16 @@ table {
   animation: shimmer 2s linear infinite;
 }
 
+/* Toast slide-in */
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.25s ease-out;
+}
+
 /* Shadow utilities */
 .shadow-subtle {
   box-shadow: var(--shadow-subtle);

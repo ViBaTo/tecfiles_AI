@@ -13,7 +13,10 @@ function getAnthropicClient() {
 }
 
 function getSupabaseAdmin() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
     throw new Error('Supabase environment variables are not configured')
   }
   return createClient(
@@ -183,13 +186,37 @@ export async function POST(request: NextRequest) {
       .eq('datasheet_id', datasheetId)
       .eq('job_type', 'extraction')
 
-    // 3. Download the PDF file
-    const pdfResponse = await fetch(datasheet.source_file_url)
-    if (!pdfResponse.ok) {
-      throw new Error(`Failed to download PDF: ${pdfResponse.statusText}`)
+    // 3. Download the PDF file from Supabase Storage using admin client
+    // Extract the storage path from the public URL
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const publicPrefix = `${supabaseUrl}/storage/v1/object/public/datasheets/`
+    const storagePath = datasheet.source_file_url.startsWith(publicPrefix)
+      ? datasheet.source_file_url.slice(publicPrefix.length)
+      : null
+
+    let pdfBuffer: ArrayBuffer
+
+    if (storagePath) {
+      // Download using the admin client (works regardless of bucket visibility)
+      const { data: fileData, error: downloadError } =
+        await supabaseAdmin.storage.from('datasheets').download(storagePath)
+
+      if (downloadError || !fileData) {
+        throw new Error(
+          `Failed to download PDF from storage: ${downloadError?.message || 'No data returned'}`
+        )
+      }
+
+      pdfBuffer = await fileData.arrayBuffer()
+    } else {
+      // Fallback: try fetching the URL directly (for backwards compatibility)
+      const pdfResponse = await fetch(datasheet.source_file_url)
+      if (!pdfResponse.ok) {
+        throw new Error(`Failed to download PDF: ${pdfResponse.statusText}`)
+      }
+      pdfBuffer = await pdfResponse.arrayBuffer()
     }
 
-    const pdfBuffer = await pdfResponse.arrayBuffer()
     const pdfBase64 = Buffer.from(pdfBuffer).toString('base64')
 
     // 4. Send to Claude Vision for extraction
