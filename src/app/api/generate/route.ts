@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import type {
+  DescriptionPreferences,
+  TenantSettings,
+} from '@/lib/supabase/types'
 
 // Lazy initialization to avoid build-time errors
 function getAnthropicClient() {
@@ -22,20 +26,102 @@ function getSupabaseAdmin() {
   )
 }
 
-// System prompt for generating commercial descriptions
-const GENERATION_SYSTEM_PROMPT = `Eres un redactor técnico-comercial especializado en fichas de producto para catálogos industriales de iluminación y mobiliario de lujo.
+// Base system prompt for generating commercial descriptions
+const BASE_SYSTEM_PROMPT = `Eres un redactor técnico-comercial especializado en fichas de producto para catálogos industriales de iluminación y mobiliario de lujo.
 Genera una descripción profesional del producto basándote en los datos técnicos proporcionados.
 
 Requisitos:
-- Tono: profesional, técnico pero accesible, evocando calidad premium
-- Longitud: 80-150 palabras
 - Estructura: párrafo descriptivo que fluya naturalmente
-- Incluir: funcionalidad principal, materiales y acabados destacados, especificaciones clave
 - NO incluir: precios, disponibilidad, información de contacto
 - NO usar frases genéricas como "alta calidad" sin contexto específico
 - Destacar aspectos únicos o premium del producto
 
 El texto debe ser listo para publicar en un catálogo profesional sin edición adicional.`
+
+// Focus area labels for the prompt
+const FOCUS_AREA_LABELS: Record<string, string> = {
+  materials: 'materiales y acabados',
+  functionality: 'funcionalidad y uso',
+  design: 'diseño y estética',
+  sustainability: 'sostenibilidad y medio ambiente',
+  innovation: 'innovación técnica',
+}
+
+/**
+ * Build a dynamic system prompt by merging the base prompt with tenant
+ * description preferences. When no preferences are stored, falls back
+ * to sensible defaults that match the original hardcoded prompt.
+ */
+function buildDynamicSystemPrompt(
+  prefs: DescriptionPreferences | undefined
+): string {
+  // If no preferences exist, use the original default behaviour
+  if (!prefs) {
+    return `${BASE_SYSTEM_PROMPT}\n\n- Tono: profesional, técnico pero accesible, evocando calidad premium\n- Longitud: 80-150 palabras\n- Incluir: funcionalidad principal, materiales y acabados destacados, especificaciones clave`
+  }
+
+  const extra: string[] = []
+
+  // ── Tone ──────────────────────────────────────
+  const toneMap: Record<string, string> = {
+    formal:
+      'Tono: formal y corporativo. Usa un registro lingüístico elevado, oraciones elaboradas y vocabulario técnico preciso.',
+    professional:
+      'Tono: profesional y accesible. Combina precisión técnica con un lenguaje claro y atractivo comercialmente.',
+    casual:
+      'Tono: cercano y amigable. Usa un lenguaje natural, directo y cálido, manteniendo la credibilidad técnica.',
+  }
+  extra.push(toneMap[prefs.tone] || toneMap.professional)
+
+  // ── Detail level ──────────────────────────────
+  const detailMap: Record<string, string> = {
+    minimal:
+      'Nivel de detalle: mínimo. Menciona solo los datos esenciales (nombre, material principal, función). Evita especificaciones numéricas.',
+    moderate:
+      'Nivel de detalle: moderado. Equilibra información técnica relevante con la descripción comercial. Incluye materiales, acabados y especificaciones clave.',
+    detailed:
+      'Nivel de detalle: alto. Incluye especificaciones técnicas detalladas (dimensiones, potencia, temperatura de color, etc.) integradas fluidamente en la descripción.',
+  }
+  extra.push(detailMap[prefs.detail_level] || detailMap.moderate)
+
+  // ── Length ────────────────────────────────────
+  const lengthMap: Record<string, string> = {
+    short: 'Longitud: 50-80 palabras.',
+    medium: 'Longitud: 80-150 palabras.',
+    long: 'Longitud: 150-250 palabras.',
+  }
+  extra.push(lengthMap[prefs.length] || lengthMap.medium)
+
+  // ── Focus areas ───────────────────────────────
+  if (prefs.focus_areas && prefs.focus_areas.length > 0) {
+    const labels = prefs.focus_areas
+      .map((area) => FOCUS_AREA_LABELS[area])
+      .filter(Boolean)
+    extra.push(
+      `Enfócate especialmente en: ${labels.join(', ')}. Estos aspectos deben tener mayor protagonismo en la descripción.`
+    )
+  } else {
+    extra.push(
+      'Incluir: funcionalidad principal, materiales y acabados destacados, especificaciones clave.'
+    )
+  }
+
+  // ── Brand keywords ────────────────────────────
+  if (prefs.brand_keywords && prefs.brand_keywords.trim()) {
+    extra.push(
+      `Intenta incorporar de forma natural los siguientes términos o valores de marca: ${prefs.brand_keywords.trim()}.`
+    )
+  }
+
+  // ── Custom instructions ───────────────────────
+  if (prefs.custom_instructions && prefs.custom_instructions.trim()) {
+    extra.push(
+      `Instrucciones adicionales del cliente:\n${prefs.custom_instructions.trim()}`
+    )
+  }
+
+  return `${BASE_SYSTEM_PROMPT}\n\n${extra.join('\n')}`
+}
 
 function buildUserPrompt(
   datasheet: Record<string, unknown>,
@@ -110,6 +196,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 1b. Fetch tenant settings for description preferences
+    const { data: tenantData } = await supabaseAdmin
+      .from('ds_tenants')
+      .select('settings')
+      .eq('id', datasheet.tenant_id)
+      .single()
+
+    const tenantSettings = tenantData?.settings as TenantSettings | null
+    const descriptionPreferences = tenantSettings?.description_preferences
+    const systemPrompt = buildDynamicSystemPrompt(descriptionPreferences)
+
     // 2. Create or update processing job
     const existingJob = await supabaseAdmin
       .from('ds_processing_jobs')
@@ -137,11 +234,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 3. Generate description with Claude
+    // 3. Generate description with Claude using dynamic system prompt
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
-      system: GENERATION_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [
         {
           role: 'user',

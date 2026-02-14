@@ -427,3 +427,39 @@ export interface LightingSpecs {
   tipo_led?: string;
   cri?: string;
 }
+
+// ==============================================
+// Description Generation Preferences
+// ==============================================
+
+export type DescriptionTone = "formal" | "professional" | "casual";
+export type DescriptionDetailLevel = "minimal" | "moderate" | "detailed";
+export type DescriptionLength = "short" | "medium" | "long";
+export type DescriptionFocusArea =
+  | "materials"
+  | "functionality"
+  | "design"
+  | "sustainability"
+  | "innovation";
+
+export interface DescriptionPreferences {
+  tone: DescriptionTone;
+  detail_level: DescriptionDetailLevel;
+  length: DescriptionLength;
+  focus_areas: DescriptionFocusArea[];
+  brand_keywords: string;
+  custom_instructions: string;
+}
+
+export interface TenantSettings {
+  description_preferences?: DescriptionPreferences;
+}
+
+export const DEFAULT_DESCRIPTION_PREFERENCES: DescriptionPreferences = {
+  tone: "professional",
+  detail_level: "moderate",
+  length: "medium",
+  focus_areas: [],
+  brand_keywords: "",
+  custom_instructions: "",
+};

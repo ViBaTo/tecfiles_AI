@@ -86,11 +86,11 @@ export default function FichaDetailPage({ params }: PageProps) {
     await updateDatasheet({ status: newStatus });
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!datasheet) return;
     setIsExporting(true);
     try {
-      generateFichaPdf(datasheet);
+      await generateFichaPdf(datasheet, id);
       toast.success("PDF exportado correctamente");
     } catch (err) {
       console.error("PDF export error:", err);

@@ -13,16 +13,25 @@ const BRAND = {
 };
 
 const PAGE_WIDTH = 210; // A4 mm
+const PAGE_HEIGHT = 297; // A4 mm
 const MARGIN = 20;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
 // ── Main export ─────────────────────────────────
-export function generateFichaPdf(datasheet: Datasheet): void {
+export async function generateFichaPdf(
+  datasheet: Datasheet,
+  datasheetId: string
+): Promise<void> {
   const doc = new jsPDF("p", "mm", "a4");
   let y = MARGIN;
 
   // ─── Header ────────────────────────────────────
   y = drawHeader(doc, datasheet, y);
+
+  // ─── Source file image (product drawing) ───────
+  if (datasheet.source_file_url) {
+    y = await drawSourceImage(doc, datasheetId, y);
+  }
 
   // ─── Basic product info ────────────────────────
   y = drawBasicInfo(doc, datasheet, y);
@@ -51,6 +60,80 @@ export function generateFichaPdf(datasheet: Datasheet): void {
     .replace(/\s+/g, "_");
 
   doc.save(`${filename || "ficha"}.pdf`);
+}
+
+// ── Source image renderer ───────────────────────
+
+async function renderPdfPageToImage(
+  pdfUrl: string,
+  scale: number = 2
+): Promise<string | null> {
+  try {
+    // Dynamic import to avoid SSR issues
+    const pdfjsLib = await import("pdfjs-dist");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
+
+    // Fetch the PDF
+    const response = await fetch(pdfUrl);
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+
+    // Load and render first page
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch (err) {
+    console.error("Failed to render source PDF page:", err);
+    return null;
+  }
+}
+
+async function drawSourceImage(
+  doc: jsPDF,
+  datasheetId: string,
+  y: number
+): Promise<number> {
+  const imageDataUrl = await renderPdfPageToImage(`/api/files/${datasheetId}`);
+  if (!imageDataUrl) return y;
+
+  // Calculate image dimensions to fit within content width
+  // Use a temporary Image to get natural dimensions
+  const imgProps = doc.getImageProperties(imageDataUrl);
+  const imgAspect = imgProps.width / imgProps.height;
+
+  const maxWidth = CONTENT_WIDTH;
+  const maxHeight = PAGE_HEIGHT - y - MARGIN - 60; // leave room for content below
+
+  let imgW = maxWidth;
+  let imgH = imgW / imgAspect;
+
+  // Clamp height
+  if (imgH > maxHeight) {
+    imgH = maxHeight;
+    imgW = imgH * imgAspect;
+  }
+
+  // Center horizontally
+  const imgX = MARGIN + (CONTENT_WIDTH - imgW) / 2;
+
+  doc.addImage(imageDataUrl, "JPEG", imgX, y, imgW, imgH);
+  y += imgH + 8;
+
+  return y;
 }
 
 // ── Section renderers ───────────────────────────
@@ -84,6 +167,12 @@ function drawBasicInfo(doc: jsPDF, ds: Datasheet, y: number): number {
   ].filter((f) => f.value);
 
   if (fields.length === 0) return y;
+
+  // Check if we need a new page
+  if (y > PAGE_HEIGHT - 40) {
+    doc.addPage();
+    y = MARGIN;
+  }
 
   const colWidth = CONTENT_WIDTH / fields.length;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Save,
   Building2,
@@ -9,21 +9,134 @@ import {
   Key,
   Loader,
   Check,
+  Sparkles,
+  Eye,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { useTenant } from "@/hooks/useTenant";
 import { createClient } from "@/lib/supabase/client";
+import type {
+  DescriptionPreferences,
+  DescriptionTone,
+  DescriptionDetailLevel,
+  DescriptionLength,
+  DescriptionFocusArea,
+  TenantSettings,
+} from "@/lib/supabase/types";
+import { DEFAULT_DESCRIPTION_PREFERENCES } from "@/lib/supabase/types";
 
+// ── Pill selector component ───────────────────────
+function PillSelector<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-slate-500 mb-2">
+        {label}
+      </label>
+      <div className="flex gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 ${
+              value === opt.value
+                ? "bg-[#1e3a5f] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Focus area chip component ─────────────────────
+const FOCUS_OPTIONS: { value: DescriptionFocusArea; label: string }[] = [
+  { value: "materials", label: "Materiales y acabados" },
+  { value: "functionality", label: "Funcionalidad" },
+  { value: "design", label: "Diseno y estetica" },
+  { value: "sustainability", label: "Sostenibilidad" },
+  { value: "innovation", label: "Innovacion tecnica" },
+];
+
+// ── Prompt preview builder ────────────────────────
+function buildPreviewText(prefs: DescriptionPreferences): string {
+  const parts: string[] = [];
+
+  const toneMap: Record<DescriptionTone, string> = {
+    formal: "formal y corporativo",
+    professional: "profesional y accesible",
+    casual: "cercano y amigable",
+  };
+  parts.push(`Tono ${toneMap[prefs.tone]}.`);
+
+  const detailMap: Record<DescriptionDetailLevel, string> = {
+    minimal: "Incluir solo los datos esenciales del producto.",
+    moderate: "Equilibrar informacion tecnica con descripcion comercial.",
+    detailed:
+      "Incluir especificaciones tecnicas detalladas junto con la descripcion.",
+  };
+  parts.push(detailMap[prefs.detail_level]);
+
+  const lengthMap: Record<DescriptionLength, string> = {
+    short: "Longitud: 50-80 palabras.",
+    medium: "Longitud: 80-150 palabras.",
+    long: "Longitud: 150-250 palabras.",
+  };
+  parts.push(lengthMap[prefs.length]);
+
+  if (prefs.focus_areas.length > 0) {
+    const focusLabels = prefs.focus_areas
+      .map((f) => FOCUS_OPTIONS.find((o) => o.value === f)?.label)
+      .filter(Boolean);
+    parts.push(`Enfocarse en: ${focusLabels.join(", ")}.`);
+  }
+
+  if (prefs.brand_keywords.trim()) {
+    parts.push(
+      `Incorporar naturalmente: ${prefs.brand_keywords.trim()}.`
+    );
+  }
+
+  if (prefs.custom_instructions.trim()) {
+    parts.push(prefs.custom_instructions.trim());
+  }
+
+  return parts.join(" ");
+}
+
+// ── Main page ─────────────────────────────────────
 export default function SettingsPage() {
   const { tenant } = useTenant();
   const supabase = createClient();
 
+  // Organization fields
   const [name, setName] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#1e3a5f");
   const [secondaryColor, setSecondaryColor] = useState("#c9a962");
+
+  // Description preferences
+  const [descPrefs, setDescPrefs] = useState<DescriptionPreferences>(
+    DEFAULT_DESCRIPTION_PREFERENCES
+  );
+
+  // UI state
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     if (tenant) {
@@ -36,8 +149,35 @@ export default function SettingsPage() {
         setPrimaryColor(colors.primary || "#1e3a5f");
         setSecondaryColor(colors.secondary || "#c9a962");
       }
+
+      // Load description preferences from tenant settings
+      const settings = tenant.settings as TenantSettings | null;
+      if (settings?.description_preferences) {
+        setDescPrefs({
+          ...DEFAULT_DESCRIPTION_PREFERENCES,
+          ...settings.description_preferences,
+        });
+      }
     }
   }, [tenant]);
+
+  const previewText = useMemo(() => buildPreviewText(descPrefs), [descPrefs]);
+
+  const updateDescPref = <K extends keyof DescriptionPreferences>(
+    key: K,
+    value: DescriptionPreferences[K]
+  ) => {
+    setDescPrefs((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleFocusArea = (area: DescriptionFocusArea) => {
+    setDescPrefs((prev) => ({
+      ...prev,
+      focus_areas: prev.focus_areas.includes(area)
+        ? prev.focus_areas.filter((a) => a !== area)
+        : [...prev.focus_areas, area],
+    }));
+  };
 
   const handleSave = async () => {
     if (!tenant) return;
@@ -45,6 +185,13 @@ export default function SettingsPage() {
     setSaving(true);
     setError(null);
     setSaved(false);
+
+    // Merge description_preferences into existing settings
+    const currentSettings = (tenant.settings as TenantSettings) || {};
+    const newSettings: TenantSettings = {
+      ...currentSettings,
+      description_preferences: descPrefs,
+    };
 
     const { error: updateError } = await supabase
       .from("ds_tenants")
@@ -54,6 +201,7 @@ export default function SettingsPage() {
           primary: primaryColor,
           secondary: secondaryColor,
         },
+        settings: newSettings,
       })
       .eq("id", tenant.id);
 
@@ -211,6 +359,149 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* AI Description Preferences */}
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-[#1e3a5f]/10 flex items-center justify-center">
+                <Sparkles size={18} className="text-[#1e3a5f]" strokeWidth={1.5} />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Preferencias de descripcion IA
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Personaliza como la IA genera las descripciones de tus
+                  productos
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              {/* Tone */}
+              <PillSelector<DescriptionTone>
+                label="Tono"
+                value={descPrefs.tone}
+                onChange={(v) => updateDescPref("tone", v)}
+                options={[
+                  { value: "formal", label: "Formal" },
+                  { value: "professional", label: "Profesional" },
+                  { value: "casual", label: "Cercano" },
+                ]}
+              />
+
+              {/* Detail level */}
+              <PillSelector<DescriptionDetailLevel>
+                label="Nivel de detalle tecnico"
+                value={descPrefs.detail_level}
+                onChange={(v) => updateDescPref("detail_level", v)}
+                options={[
+                  { value: "minimal", label: "Minimo" },
+                  { value: "moderate", label: "Moderado" },
+                  { value: "detailed", label: "Detallado" },
+                ]}
+              />
+
+              {/* Length */}
+              <PillSelector<DescriptionLength>
+                label="Longitud"
+                value={descPrefs.length}
+                onChange={(v) => updateDescPref("length", v)}
+                options={[
+                  { value: "short", label: "Corta (~50 pal.)" },
+                  { value: "medium", label: "Media (~100 pal.)" },
+                  { value: "long", label: "Larga (~200 pal.)" },
+                ]}
+              />
+
+              {/* Focus areas */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-2">
+                  Enfoques prioritarios
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {FOCUS_OPTIONS.map((opt) => {
+                    const isActive = descPrefs.focus_areas.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => toggleFocusArea(opt.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 border ${
+                          isActive
+                            ? "bg-[#1e3a5f] text-white border-[#1e3a5f]"
+                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Brand keywords */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                  Palabras clave de marca
+                </label>
+                <input
+                  type="text"
+                  value={descPrefs.brand_keywords}
+                  onChange={(e) =>
+                    updateDescPref("brand_keywords", e.target.value)
+                  }
+                  placeholder="artesanal, lujo contemporaneo, hecho a medida..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-1 placeholder:text-slate-300"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Terminos que la IA intentara incorporar de forma natural en las
+                  descripciones
+                </p>
+              </div>
+
+              {/* Custom instructions */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                  Instrucciones adicionales
+                </label>
+                <textarea
+                  value={descPrefs.custom_instructions}
+                  onChange={(e) =>
+                    updateDescPref("custom_instructions", e.target.value)
+                  }
+                  placeholder="Ej: Siempre mencionar que es fabricacion europea. No incluir dimensiones en la descripcion..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 focus:ring-offset-1 placeholder:text-slate-300 resize-none"
+                />
+              </div>
+
+              {/* Preview toggle */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowPreview((v) => !v)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1e3a5f] hover:text-[#16304f] transition-colors duration-150"
+                >
+                  <Eye size={14} strokeWidth={1.5} />
+                  {showPreview
+                    ? "Ocultar vista previa"
+                    : "Ver vista previa del prompt"}
+                </button>
+
+                {showPreview && (
+                  <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-2">
+                      Instrucciones que recibira la IA
+                    </p>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {previewText}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
