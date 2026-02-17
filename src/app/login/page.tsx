@@ -9,10 +9,12 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
+  ArrowLeft,
   FileText,
   Sparkles,
   Shield,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -24,7 +26,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
-  const { signIn } = useAuth();
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const { signIn, resetPasswordForEmail } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -45,6 +52,21 @@ export default function LoginPage() {
       router.push("/");
       router.refresh();
     }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetError(null);
+
+    const { error } = await resetPasswordForEmail(resetEmail);
+
+    if (error) {
+      setResetError(error.message);
+    } else {
+      setResetSent(true);
+    }
+    setResetLoading(false);
   };
 
   const features = [
@@ -189,10 +211,12 @@ export default function LoginPage() {
           {/* Header */}
           <div className="mb-14">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-              Bienvenido de vuelta
+              {showForgotPassword ? "Recuperar contrasena" : "Bienvenido de vuelta"}
             </h2>
             <p className="text-white/50 text-base">
-              Ingresa tus credenciales para continuar
+              {showForgotPassword
+                ? "Te ayudamos a restablecer tu acceso"
+                : "Ingresa tus credenciales para continuar"}
             </p>
           </div>
 
@@ -211,6 +235,97 @@ export default function LoginPage() {
 
           {/* Form Card */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-8">
+            {showForgotPassword ? (
+              <div>
+                {resetSent ? (
+                  <div className="text-center py-4">
+                    <div className="w-12 h-12 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle2 className="w-6 h-6 text-green-400" strokeWidth={1.5} />
+                    </div>
+                    <h3 className="text-white font-medium text-lg mb-2">
+                      Correo enviado
+                    </h3>
+                    <p className="text-white/50 text-sm mb-6">
+                      Hemos enviado un enlace de recuperacion a{" "}
+                      <span className="text-white/70 font-medium">{resetEmail}</span>.
+                      Revisa tu bandeja de entrada.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotPassword(false);
+                        setResetSent(false);
+                      }}
+                      className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white/80 transition-colors duration-200"
+                    >
+                      <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />
+                      Volver al inicio de sesion
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPassword}>
+                    <p className="text-white/50 text-sm mb-6">
+                      Introduce tu correo electronico y te enviaremos un enlace para restablecer tu contrasena.
+                    </p>
+
+                    {resetError && (
+                      <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" strokeWidth={1.5} />
+                        <p className="text-red-400/70 text-sm">{resetError}</p>
+                      </div>
+                    )}
+
+                    <div className="mb-6">
+                      <label
+                        htmlFor="reset-email"
+                        className="block text-xs font-medium uppercase tracking-wider mb-3 text-white/50"
+                      >
+                        Correo electronico
+                      </label>
+                      <div className="relative flex items-center">
+                        <div className="absolute left-3 w-9 h-9 rounded-lg flex items-center justify-center bg-white/8 text-white/40">
+                          <Mail className="w-4 h-4" strokeWidth={1.5} />
+                        </div>
+                        <input
+                          id="reset-email"
+                          type="email"
+                          value={resetEmail}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          className="w-full pl-15 pr-4 py-3.5 rounded-lg bg-white/8 border border-white/15 text-white placeholder-white/30 text-sm focus:outline-none focus:bg-white/10 focus:border-white/25 transition-all duration-200"
+                          placeholder="tu@email.com"
+                          required
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={resetLoading}
+                      className="w-full py-3.5 px-6 rounded-lg font-medium text-sm bg-[#1e3a5f] hover:bg-[#16304f] text-white transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-4"
+                    >
+                      {resetLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
+                          <span>Enviando...</span>
+                        </>
+                      ) : (
+                        <span>Enviar enlace de recuperacion</span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPassword(false)}
+                      className="w-full inline-flex items-center justify-center gap-2 text-sm text-white/50 hover:text-white/80 transition-colors duration-200"
+                    >
+                      <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />
+                      Volver al inicio de sesion
+                    </button>
+                  </form>
+                )}
+              </div>
+            ) : (
             <form onSubmit={handleSubmit}>
               {/* Email Field */}
               <div className="mb-6">
@@ -259,6 +374,12 @@ export default function LoginPage() {
                   </label>
                   <button
                     type="button"
+                    onClick={() => {
+                      setShowForgotPassword(true);
+                      setResetEmail(email);
+                      setResetSent(false);
+                      setResetError(null);
+                    }}
                     className="text-xs text-white/40 hover:text-white/70 transition-colors duration-200"
                   >
                     Olvidaste tu contrasena?
@@ -322,6 +443,7 @@ export default function LoginPage() {
                 )}
               </button>
             </form>
+            )}
           </div>
 
           {/* Footer */}

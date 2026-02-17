@@ -26,8 +26,8 @@ function getSupabaseAdmin() {
   )
 }
 
-// Base system prompt for generating commercial descriptions
-const BASE_SYSTEM_PROMPT = `Eres un redactor técnico-comercial especializado en fichas de producto para catálogos industriales de iluminación y mobiliario de lujo.
+// Base system prompt for generating commercial descriptions (tenant-agnostic)
+const BASE_SYSTEM_PROMPT = `Eres un redactor técnico-comercial especializado en fichas de producto para catálogos industriales.
 Genera una descripción profesional del producto basándote en los datos técnicos proporcionados.
 
 Requisitos:
@@ -123,14 +123,23 @@ function buildDynamicSystemPrompt(
   return `${BASE_SYSTEM_PROMPT}\n\n${extra.join('\n')}`
 }
 
+const LANGUAGE_LABELS: Record<string, string> = {
+  es: 'español',
+  en: 'inglés',
+  fr: 'francés',
+  de: 'alemán',
+}
+
 function buildUserPrompt(
   datasheet: Record<string, unknown>,
-  language: string
+  language: string,
+  tenantName: string
 ): string {
   const specs = datasheet.technical_specs as Record<string, unknown> | null
   const components = datasheet.components as string[] | null
+  const langLabel = LANGUAGE_LABELS[language] || language
 
-  return `Genera una descripción comercial para este producto de OMIO Atelier & Design en ${language === 'es' ? 'español' : language === 'en' ? 'inglés' : language === 'fr' ? 'francés' : 'alemán'}:
+  return `Genera una descripción comercial para este producto de ${tenantName} en ${langLabel}:
 
 DATOS DEL PRODUCTO:
 - Nombre: ${datasheet.article_name || 'No especificado'}
@@ -147,6 +156,107 @@ COMPONENTES:
 ${components && components.length > 0 ? components.join(', ') : 'No especificados'}
 
 Genera SOLO la descripción, sin título ni encabezados adicionales.`
+}
+
+// ── Quality validation ──────────────────────────
+
+interface QualityReport {
+  score: number           // 0-100
+  word_count: number
+  warnings: string[]
+  length_target_met: boolean
+  fields_completeness: number  // 0-100 percentage of basic fields present
+}
+
+const LENGTH_RANGES: Record<string, [number, number]> = {
+  short: [50, 80],
+  medium: [80, 150],
+  long: [150, 250],
+}
+
+/**
+ * Validates the generated description against the tenant's configured
+ * preferences. Returns a quality report with a score and warnings.
+ */
+function validateGeneratedDescription(
+  description: string,
+  datasheet: Record<string, unknown>,
+  prefs: DescriptionPreferences | undefined
+): QualityReport {
+  const warnings: string[] = []
+  const wordCount = description.split(/\s+/).filter(Boolean).length
+
+  // 1. Check word count against length preference
+  const targetLength = prefs?.length || 'medium'
+  const [minWords, maxWords] = LENGTH_RANGES[targetLength] || LENGTH_RANGES.medium
+  const lengthTargetMet = wordCount >= minWords && wordCount <= maxWords
+
+  if (wordCount < minWords) {
+    warnings.push(
+      `La descripción es más corta de lo esperado (${wordCount} palabras, objetivo: ${minWords}-${maxWords}).`
+    )
+  } else if (wordCount > maxWords * 1.3) {
+    warnings.push(
+      `La descripción excede significativamente la longitud objetivo (${wordCount} palabras, objetivo: ${minWords}-${maxWords}).`
+    )
+  }
+
+  // 2. Check for basic field completeness in the datasheet
+  const basicFields = ['article_name', 'material', 'finish', 'dimensions']
+  const presentFields = basicFields.filter(
+    (f) => datasheet[f] && String(datasheet[f]).trim() !== ''
+  )
+  const fieldsCompleteness = Math.round(
+    (presentFields.length / basicFields.length) * 100
+  )
+
+  if (fieldsCompleteness < 50) {
+    warnings.push(
+      `Solo ${presentFields.length} de ${basicFields.length} campos básicos están completos. La descripción puede carecer de detalle.`
+    )
+  }
+
+  // 3. Check for generic filler phrases
+  const genericPhrases = [
+    'alta calidad',
+    'la mejor calidad',
+    'máxima calidad',
+    'excelente producto',
+    'producto de primera',
+  ]
+  const lowerDesc = description.toLowerCase()
+  const foundGeneric = genericPhrases.filter((p) => lowerDesc.includes(p))
+  if (foundGeneric.length > 0) {
+    warnings.push(
+      `La descripción contiene frases genéricas que deben evitarse: "${foundGeneric.join('", "')}".`
+    )
+  }
+
+  // 4. Check the description is not just a list (should be prose)
+  const lineCount = description.split('\n').filter((l) => l.trim()).length
+  if (lineCount > 5 && description.includes('- ')) {
+    warnings.push(
+      'La descripción parece contener una lista con viñetas. Se espera texto en párrafos fluidos.'
+    )
+  }
+
+  // 5. Calculate overall quality score (0-100)
+  let score = 100
+  if (!lengthTargetMet) score -= 15
+  if (wordCount > maxWords * 1.3) score -= 10
+  if (fieldsCompleteness < 75) score -= 10
+  if (fieldsCompleteness < 50) score -= 10
+  if (foundGeneric.length > 0) score -= 10 * foundGeneric.length
+  if (lineCount > 5 && description.includes('- ')) score -= 10
+  score = Math.max(0, Math.min(100, score))
+
+  return {
+    score,
+    word_count: wordCount,
+    warnings,
+    length_target_met: lengthTargetMet,
+    fields_completeness: fieldsCompleteness,
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -196,13 +306,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1b. Fetch tenant settings for description preferences
+    // 1b. Fetch tenant name and settings for description preferences
     const { data: tenantData } = await supabaseAdmin
       .from('ds_tenants')
-      .select('settings')
+      .select('name, settings')
       .eq('id', datasheet.tenant_id)
       .single()
 
+    const tenantName = tenantData?.name || 'el fabricante'
     const tenantSettings = tenantData?.settings as TenantSettings | null
     const descriptionPreferences = tenantSettings?.description_preferences
     const systemPrompt = buildDynamicSystemPrompt(descriptionPreferences)
@@ -242,7 +353,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: buildUserPrompt(datasheet, language)
+          content: buildUserPrompt(datasheet, language, tenantName)
         }
       ]
     })
@@ -255,7 +366,14 @@ export async function POST(request: NextRequest) {
       throw new Error('No description was generated')
     }
 
-    // 5. Update the datasheet with the generated description
+    // 5. Run quality validation
+    const qualityReport = validateGeneratedDescription(
+      generatedDescription,
+      datasheet,
+      descriptionPreferences
+    )
+
+    // 6. Update the datasheet with the generated description and quality report
     const currentMetadata =
       (datasheet.generation_metadata as Record<string, unknown>) || {}
 
@@ -270,7 +388,8 @@ export async function POST(request: NextRequest) {
           description_timestamp: new Date().toISOString(),
           description_tokens_input: message.usage.input_tokens,
           description_tokens_output: message.usage.output_tokens,
-          description_language: language
+          description_language: language,
+          quality_report: qualityReport,
         },
         updated_at: new Date().toISOString()
       })
@@ -280,7 +399,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`Failed to update datasheet: ${updateError.message}`)
     }
 
-    // 6. Update processing job to completed
+    // 7. Update processing job to completed
     await supabaseAdmin
       .from('ds_processing_jobs')
       .update({
@@ -288,14 +407,15 @@ export async function POST(request: NextRequest) {
         output_data: {
           description: generatedDescription,
           language,
-          tokens: message.usage
+          tokens: message.usage,
+          quality_report: qualityReport,
         },
         completed_at: new Date().toISOString()
       })
       .eq('datasheet_id', datasheetId)
       .eq('job_type', 'generation')
 
-    // 7. Log the activity
+    // 8. Log the activity
     await supabaseAdmin.from('ds_activity_log').insert({
       tenant_id: datasheet.tenant_id,
       datasheet_id: datasheetId,
@@ -303,7 +423,9 @@ export async function POST(request: NextRequest) {
       details: {
         language,
         tokens_used: message.usage.input_tokens + message.usage.output_tokens,
-        word_count: generatedDescription.split(/\s+/).length
+        word_count: qualityReport.word_count,
+        quality_score: qualityReport.score,
+        quality_warnings: qualityReport.warnings,
       }
     })
 
@@ -315,7 +437,8 @@ export async function POST(request: NextRequest) {
       tokensUsed: {
         input: message.usage.input_tokens,
         output: message.usage.output_tokens
-      }
+      },
+      quality: qualityReport,
     })
   } catch (error) {
     console.error('Generation error:', error)

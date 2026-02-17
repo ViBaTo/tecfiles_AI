@@ -24,7 +24,10 @@ import { ComponentsSection } from "@/components/fichas/ComponentsSection";
 import { DescriptionSection } from "@/components/fichas/DescriptionSection";
 import { StatusActions } from "@/components/fichas/StatusActions";
 import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
+import { useTenant } from "@/hooks/useTenant";
+import { useTemplates } from "@/hooks/useTemplates";
 import type { DatasheetStatus } from "@/lib/supabase/types";
+import { canEditDatasheet, canExtract } from "@/lib/permissions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -33,6 +36,8 @@ interface PageProps {
 export default function FichaDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const { datasheet, loading, error, updateDatasheet, refetch } = useDatasheet(id);
+  const { tenant, tenantUser } = useTenant();
+  const { templates } = useTemplates({ tenantId: tenant?.id });
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -90,7 +95,12 @@ export default function FichaDetailPage({ params }: PageProps) {
     if (!datasheet) return;
     setIsExporting(true);
     try {
-      await generateFichaPdf(datasheet, id);
+      // Use datasheet's template, or the tenant's default "single" template
+      const template =
+        templates.find((t) => t.id === datasheet.template_id) ||
+        templates.find((t) => t.is_default && t.template_type === "single") ||
+        null;
+      await generateFichaPdf(datasheet, id, template);
       toast.success("PDF exportado correctamente");
     } catch (err) {
       console.error("PDF export error:", err);
@@ -149,7 +159,7 @@ export default function FichaDetailPage({ params }: PageProps) {
           actions={
             <div className="flex items-center gap-2">
               <EstadoBadge estado={datasheet.status} size="md" />
-              {datasheet.source_file_url && (
+              {datasheet.source_file_url && canExtract(tenantUser?.role) && (
                 <button
                   onClick={handleReExtract}
                   disabled={isExtracting}
@@ -175,9 +185,11 @@ export default function FichaDetailPage({ params }: PageProps) {
                 )}
                 {isExporting ? "Exportando..." : "Exportar PDF"}
               </button>
-              <button className="inline-flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-lg bg-[#1e3a5f] hover:bg-[#16304f] transition-colors duration-150">
-                <Save size={16} strokeWidth={1.5} /> Guardar
-              </button>
+              {canEditDatasheet(tenantUser?.role) && (
+                <button className="inline-flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-lg bg-[#1e3a5f] hover:bg-[#16304f] transition-colors duration-150">
+                  <Save size={16} strokeWidth={1.5} /> Guardar
+                </button>
+              )}
             </div>
           }
         />
@@ -208,10 +220,12 @@ export default function FichaDetailPage({ params }: PageProps) {
             onLanguageChange={setSelectedLanguage}
             onGenerate={handleGenerateDescription}
             isGenerating={isGenerating}
+            generationMetadata={datasheet.generation_metadata}
           />
 
           <StatusActions
             status={datasheet.status}
+            userRole={tenantUser?.role}
             onStatusChange={handleStatusChange}
           />
         </div>

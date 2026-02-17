@@ -1,8 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, RefreshCw, Loader, Copy, Check } from "lucide-react";
+import { Sparkles, RefreshCw, Loader, Copy, Check, AlertTriangle } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
+import type { Json } from "@/lib/supabase/types";
+
+interface QualityReport {
+  score: number;
+  word_count: number;
+  warnings: string[];
+  length_target_met: boolean;
+  fields_completeness: number;
+}
 
 interface DescriptionSectionProps {
   description: string | null;
@@ -11,6 +20,7 @@ interface DescriptionSectionProps {
   onLanguageChange: (lang: string) => void;
   onGenerate: () => Promise<void>;
   isGenerating: boolean;
+  generationMetadata?: Json;
 }
 
 const LANGUAGES = [
@@ -27,9 +37,16 @@ export function DescriptionSection({
   onLanguageChange,
   onGenerate,
   isGenerating,
+  generationMetadata,
 }: DescriptionSectionProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
+
+  // Extract quality report from generation metadata
+  const qualityReport =
+    generationMetadata && typeof generationMetadata === 'object' && !Array.isArray(generationMetadata)
+      ? ((generationMetadata as Record<string, unknown>).quality_report as QualityReport | undefined)
+      : undefined;
 
   const handleCopy = async () => {
     if (!description) return;
@@ -115,15 +132,59 @@ export function DescriptionSection({
 
             {/* Footer */}
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-              {descriptionLanguage && (
-                <span className="text-[11px] text-slate-400 font-medium">
-                  Idioma: {currentLangFull}
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {descriptionLanguage && (
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Idioma: {currentLangFull}
+                  </span>
+                )}
+                {qualityReport && (
+                  <span
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                      qualityReport.score >= 80
+                        ? "bg-emerald-50 text-emerald-700"
+                        : qualityReport.score >= 50
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-red-50 text-red-700"
+                    }`}
+                  >
+                    Calidad: {qualityReport.score}/100
+                  </span>
+                )}
+              </div>
               <span className="text-[11px] text-slate-400 tabular-nums">
-                {description.length} caracteres
+                {qualityReport
+                  ? `${qualityReport.word_count} palabras`
+                  : `${description.length} caracteres`}
               </span>
             </div>
+
+            {/* Quality warnings */}
+            {qualityReport &&
+              qualityReport.warnings.length > 0 && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <AlertTriangle
+                      size={13}
+                      strokeWidth={1.5}
+                      className="text-amber-600"
+                    />
+                    <span className="text-[11px] font-semibold text-amber-800">
+                      Advertencias de calidad
+                    </span>
+                  </div>
+                  <ul className="space-y-1">
+                    {qualityReport.warnings.map((w, i) => (
+                      <li
+                        key={i}
+                        className="text-[11px] text-amber-700 leading-snug"
+                      >
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
           </div>
         ) : (
           <div className="text-center py-10">
