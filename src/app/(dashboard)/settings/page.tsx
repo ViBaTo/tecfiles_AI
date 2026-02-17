@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Save,
   Building2,
@@ -71,6 +71,42 @@ const FOCUS_OPTIONS: { value: DescriptionFocusArea; label: string }[] = [
   { value: "innovation", label: "Innovacion tecnica" },
 ];
 
+// ── Usage bar component ──────────────────────────
+function UsageBar({
+  label,
+  current,
+  max,
+}: {
+  label: string;
+  current: number;
+  max: number;
+}) {
+  const pct = max > 0 ? Math.min(100, Math.round((current / max) * 100)) : 0;
+  const colorClass =
+    pct >= 90
+      ? "bg-red-400"
+      : pct >= 75
+        ? "bg-amber-400"
+        : "bg-emerald-400";
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-sm">
+        <span className="text-white/60">{label}</span>
+        <span className="font-medium tabular-nums">
+          {current} / {max}
+        </span>
+      </div>
+      <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${colorClass}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Prompt preview builder ────────────────────────
 function buildPreviewText(prefs: DescriptionPreferences): string {
   const parts: string[] = [];
@@ -119,7 +155,7 @@ function buildPreviewText(prefs: DescriptionPreferences): string {
 
 // ── Main page ─────────────────────────────────────
 export default function SettingsPage() {
-  const { tenant } = useTenant();
+  const { tenant, refreshTenant } = useTenant();
   const supabase = createClient();
 
   // Organization fields
@@ -132,11 +168,56 @@ export default function SettingsPage() {
     DEFAULT_DESCRIPTION_PREFERENCES
   );
 
+  // Logo upload
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
   // UI state
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+
+  // Plan usage counts
+  const [usageCounts, setUsageCounts] = useState<{
+    datasheetsThisMonth: number;
+    totalUsers: number;
+    totalTemplates: number;
+  } | null>(null);
+
+  const fetchUsage = useCallback(async () => {
+    if (!tenant?.id) return;
+
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    const [dsResult, usersResult, templatesResult] = await Promise.all([
+      supabase
+        .from("ds_datasheets")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", tenant.id)
+        .gte("created_at", firstOfMonth),
+      supabase
+        .from("ds_tenant_users")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", tenant.id),
+      supabase
+        .from("ds_templates")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", tenant.id),
+    ]);
+
+    setUsageCounts({
+      datasheetsThisMonth: dsResult.count || 0,
+      totalUsers: usersResult.count || 0,
+      totalTemplates: templatesResult.count || 0,
+    });
+  }, [tenant?.id, supabase]);
+
+  useEffect(() => {
+    fetchUsage();
+  }, [fetchUsage]);
 
   useEffect(() => {
     if (tenant) {
@@ -160,6 +241,54 @@ export default function SettingsPage() {
       }
     }
   }, [tenant]);
+
+  useEffect(() => {
+    if (tenant?.logo_url) {
+      setLogoPreview(tenant.logo_url);
+    }
+  }, [tenant?.logo_url]);
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setError("El archivo debe ser una imagen");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError("La imagen no debe superar 2MB");
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
+
+  const uploadLogo = async (): Promise<string | null> => {
+    if (!logoFile || !tenant) return tenant?.logo_url ?? null;
+
+    setUploadingLogo(true);
+
+    const ext = logoFile.name.split(".").pop() || "png";
+    const filePath = `${tenant.id}/logo_${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("tenant-logos")
+      .upload(filePath, logoFile, { upsert: true });
+
+    if (uploadError) {
+      setUploadingLogo(false);
+      throw new Error(uploadError.message);
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("tenant-logos")
+      .getPublicUrl(filePath);
+
+    setUploadingLogo(false);
+    return urlData.publicUrl;
+  };
 
   const previewText = useMemo(() => buildPreviewText(descPrefs), [descPrefs]);
 
@@ -186,30 +315,39 @@ export default function SettingsPage() {
     setError(null);
     setSaved(false);
 
-    // Merge description_preferences into existing settings
-    const currentSettings = (tenant.settings as TenantSettings) || {};
-    const newSettings: TenantSettings = {
-      ...currentSettings,
-      description_preferences: descPrefs,
-    };
+    try {
+      const logoUrl = await uploadLogo();
 
-    const { error: updateError } = await supabase
-      .from("ds_tenants")
-      .update({
-        name,
-        brand_colors: {
-          primary: primaryColor,
-          secondary: secondaryColor,
-        },
-        settings: newSettings,
-      })
-      .eq("id", tenant.id);
+      // Merge description_preferences into existing settings
+      const currentSettings = (tenant.settings as TenantSettings) || {};
+      const newSettings: TenantSettings = {
+        ...currentSettings,
+        description_preferences: descPrefs,
+      };
 
-    if (updateError) {
-      setError(updateError.message);
-    } else {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      const { error: updateError } = await supabase
+        .from("ds_tenants")
+        .update({
+          name,
+          logo_url: logoUrl,
+          brand_colors: {
+            primary: primaryColor,
+            secondary: secondaryColor,
+          },
+          settings: newSettings,
+        })
+        .eq("id", tenant.id);
+
+      if (updateError) {
+        setError(updateError.message);
+      } else {
+        setSaved(true);
+        setLogoFile(null);
+        await refreshTenant();
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al subir el logo");
     }
 
     setSaving(false);
@@ -316,9 +454,39 @@ export default function SettingsPage() {
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">
                   Logo
                 </label>
-                <div className="w-full h-24 rounded-lg border-2 border-dashed border-slate-200 flex items-center justify-center text-sm text-slate-400 cursor-pointer hover:border-slate-300 hover:text-slate-500 transition-colors duration-150">
-                  Click para subir
-                </div>
+                <label
+                  htmlFor="logo-upload"
+                  className="relative w-full h-24 rounded-lg border-2 border-dashed border-slate-200 flex items-center justify-center text-sm text-slate-400 cursor-pointer hover:border-slate-300 hover:text-slate-500 transition-colors duration-150 overflow-hidden"
+                >
+                  {logoPreview ? (
+                    <img
+                      src={logoPreview}
+                      alt="Logo preview"
+                      className="h-full w-full object-contain p-2"
+                    />
+                  ) : (
+                    <span>Click para subir</span>
+                  )}
+                  <input
+                    id="logo-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoChange}
+                    className="hidden"
+                  />
+                </label>
+                {logoPreview && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLogoFile(null);
+                      setLogoPreview(null);
+                    }}
+                    className="mt-1 text-xs text-red-500 hover:text-red-700"
+                  >
+                    Quitar logo
+                  </button>
+                )}
               </div>
               <div className="space-y-4">
                 <div>
@@ -515,22 +683,21 @@ export default function SettingsPage() {
               Tu Plan: {tenant?.plan || "Starter"}
             </h3>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-white/60">Fichas/mes</span>
-                <span className="font-medium tabular-nums">
-                  {tenant?.max_datasheets_month || 50}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/60">Usuarios</span>
-                <span className="font-medium tabular-nums">{tenant?.max_users || 2}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/60">Plantillas</span>
-                <span className="font-medium tabular-nums">
-                  {tenant?.max_templates || 1}
-                </span>
-              </div>
+              <UsageBar
+                label="Fichas/mes"
+                current={usageCounts?.datasheetsThisMonth ?? 0}
+                max={tenant?.max_datasheets_month || 50}
+              />
+              <UsageBar
+                label="Usuarios"
+                current={usageCounts?.totalUsers ?? 0}
+                max={tenant?.max_users || 2}
+              />
+              <UsageBar
+                label="Plantillas"
+                current={usageCounts?.totalTemplates ?? 0}
+                max={tenant?.max_templates || 1}
+              />
             </div>
             <button className="w-full mt-6 py-2 rounded-lg bg-white text-[#1e3a5f] text-sm font-medium hover:bg-white/90 transition-colors duration-150">
               Actualizar plan

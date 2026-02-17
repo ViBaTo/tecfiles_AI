@@ -15,9 +15,8 @@ import { useAuth } from "@/contexts/AuthContext";
 interface TenantContextValue {
   tenant: Tenant | null;
   tenantUser: TenantUser | null;
-  tenants: Tenant[];
   loading: boolean;
-  switchTenant: (tenantId: string) => void;
+  refreshTenant: () => Promise<void>;
 }
 
 const TenantContext = createContext<TenantContextValue | null>(null);
@@ -32,73 +31,54 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [tenantUser, setTenantUser] = useState<TenantUser | null>(null);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  useEffect(() => {
+  const fetchTenant = useCallback(async () => {
     if (!user) {
       setTenant(null);
       setTenantUser(null);
-      setTenants([]);
       setLoading(false);
       return;
     }
 
-    const fetchTenants = async () => {
-      setLoading(true);
+    setLoading(true);
 
-      const { data: memberships, error: membershipError } = await supabase
-        .from("ds_tenant_users")
-        .select(
-          `
-          *,
-          tenant:ds_tenants(*)
+    const { data: membership, error: membershipError } = await supabase
+      .from("ds_tenant_users")
+      .select(
         `
-        )
-        .eq("user_id", user.id);
+        *,
+        tenant:ds_tenants(*)
+      `
+      )
+      .eq("user_id", user.id)
+      .single();
 
-      if (membershipError) {
-        console.error("Error fetching tenants:", membershipError);
-        setLoading(false);
-        return;
-      }
-
-      if (memberships && memberships.length > 0) {
-        const userTenants = memberships
-          .map((m) => m.tenant as unknown as Tenant)
-          .filter(Boolean);
-        setTenants(userTenants);
-
-        const storedTenantId = localStorage.getItem("currentTenantId");
-        const currentMembership =
-          memberships.find((m) => m.tenant_id === storedTenantId) ||
-          memberships[0];
-
-        setTenant(currentMembership.tenant as unknown as Tenant);
-        setTenantUser(currentMembership);
-      }
-
+    if (membershipError) {
+      console.error("Error fetching tenant:", membershipError);
+      setTenant(null);
+      setTenantUser(null);
       setLoading(false);
-    };
+      return;
+    }
 
-    fetchTenants();
+    setTenant(membership.tenant as unknown as Tenant);
+    setTenantUser(membership);
+    setLoading(false);
   }, [user, supabase]);
 
-  const switchTenant = useCallback(
-    (tenantId: string) => {
-      const targetTenant = tenants.find((t) => t.id === tenantId);
-      if (targetTenant) {
-        setTenant(targetTenant);
-        localStorage.setItem("currentTenantId", tenantId);
-      }
-    },
-    [tenants]
-  );
+  useEffect(() => {
+    fetchTenant();
+  }, [fetchTenant]);
+
+  const refreshTenant = useCallback(async () => {
+    await fetchTenant();
+  }, [fetchTenant]);
 
   return (
     <TenantContext.Provider
-      value={{ tenant, tenantUser, tenants, loading, switchTenant }}
+      value={{ tenant, tenantUser, loading, refreshTenant }}
     >
       {children}
     </TenantContext.Provider>

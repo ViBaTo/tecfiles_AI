@@ -11,7 +11,6 @@ import {
   Layers,
   Users,
   Settings,
-  ChevronDown,
   LogOut,
   Menu,
   X,
@@ -105,19 +104,24 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Tenant selector */}
+        {/* Organization */}
         <div className="px-3 py-3 border-b border-slate-100">
-          <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors duration-150">
-            <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 px-3 py-2">
+            {tenant?.logo_url ? (
+              <img
+                src={tenant.logo_url}
+                alt={tenant.name || "Logo"}
+                className="w-7 h-7 rounded-lg object-cover"
+              />
+            ) : (
               <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[11px] text-slate-600 font-semibold">
                 {tenant?.name?.charAt(0) || "T"}
               </div>
-              <span className="text-xs text-slate-700 font-medium truncate max-w-[120px]">
-                {tenant?.name || "Seleccionar..."}
-              </span>
-            </div>
-            <ChevronDown size={14} className="text-slate-400" strokeWidth={1.5} />
-          </button>
+            )}
+            <span className="text-xs text-slate-700 font-medium truncate max-w-[120px]">
+              {tenant?.name || "Cargando..."}
+            </span>
+          </div>
         </div>
 
         {/* Primary Nav */}

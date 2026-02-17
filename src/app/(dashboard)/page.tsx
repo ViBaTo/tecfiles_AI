@@ -4,10 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  FileText,
   Plus,
   Package,
-  Zap,
   Eye,
   Download,
   Trash2,
@@ -17,23 +15,15 @@ import { EstadoBadge } from "@/components/ui/EstadoBadge";
 import { Header } from "@/components/layout/Header";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { StatusDonutChart } from "@/components/dashboard/StatusDonutChart";
+import { DatasheetsLineChart } from "@/components/dashboard/DatasheetsLineChart";
 import { useDatasheets } from "@/hooks/useDatasheets";
 import { useTenant } from "@/contexts/TenantContext";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useToast } from "@/contexts/ToastContext";
 import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
 import { canDeleteDatasheet } from "@/lib/permissions";
-import type { DatasheetStatus, Datasheet } from "@/lib/supabase/types";
-
-const STATUS_CONFIG: Record<DatasheetStatus, { label: string; dotColor: string }> = {
-  uploading: { label: "Subiendo", dotColor: "bg-blue-500" },
-  extracting: { label: "Extrayendo", dotColor: "bg-blue-500" },
-  draft: { label: "Borrador", dotColor: "bg-slate-400" },
-  review: { label: "En Revisión", dotColor: "bg-amber-500" },
-  approved: { label: "Aprobado", dotColor: "bg-emerald-500" },
-  published: { label: "Publicado", dotColor: "bg-sky-500" },
-  error: { label: "Error", dotColor: "bg-red-500" },
-};
+import type { Datasheet } from "@/lib/supabase/types";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -79,8 +69,6 @@ export default function DashboardPage() {
     const today = new Date().toDateString();
     return new Date(f.created_at).toDateString() === today;
   }).length;
-  const costeIA = (totalFichas * 0.03).toFixed(2);
-
   // Count by status
   const statusCounts = datasheets.reduce((acc, f) => {
     acc[f.status] = (acc[f.status] || 0) + 1;
@@ -104,13 +92,24 @@ export default function DashboardPage() {
     return (
       <div>
         <Header title="Dashboard" subtitle="Vista general del catálogo" />
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-          {[...Array(5)].map((_, i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {[...Array(4)].map((_, i) => (
             <div key={i} className="bg-white border border-slate-200 rounded-lg p-5">
               <div className="h-3 w-20 bg-slate-100 rounded animate-pulse" />
               <div className="h-7 w-16 bg-slate-100 rounded animate-pulse mt-3" />
             </div>
           ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-lg p-5">
+            <div className="h-3 w-28 bg-slate-100 rounded animate-pulse" />
+            <div className="h-3 w-20 bg-slate-100 rounded animate-pulse mt-2" />
+            <div className="h-[220px] bg-slate-50 rounded animate-pulse mt-4" />
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-5">
+            <div className="h-3 w-20 bg-slate-100 rounded animate-pulse" />
+            <div className="h-[180px] bg-slate-50 rounded-full mx-auto w-[160px] animate-pulse mt-6" />
+          </div>
         </div>
       </div>
     );
@@ -132,17 +131,24 @@ export default function DashboardPage() {
       />
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard label="Total Productos" value={totalFichas} />
         <StatCard label="Pendientes de Revisión" value={pendientesRevision} />
         <StatCard label="Publicadas" value={publicadas} />
         <StatCard label="Generadas Hoy" value={generadasHoy} />
-        <StatCard label="Coste IA Este Mes" value={`€${costeIA}`} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="lg:col-span-2">
+          <DatasheetsLineChart datasheets={datasheets} />
+        </div>
+        <StatusDonutChart statusCounts={statusCounts} total={totalFichas} />
+      </div>
+
+      <div>
         {/* Activity Table */}
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Actividad Reciente</h2>
             <Link
@@ -242,52 +248,6 @@ export default function DashboardPage() {
               </table>
             </div>
           )}
-        </div>
-
-        {/* Status Breakdown + AI Cost */}
-        <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-lg p-5">
-            <h3 className="text-sm font-semibold text-slate-900 mb-4">
-              Por Estado
-            </h3>
-            <div className="space-y-0.5">
-              {Object.entries(statusCounts).map(([status, count]) => {
-                const config = STATUS_CONFIG[status as DatasheetStatus];
-                if (!config) return null;
-                return (
-                  <div
-                    key={status}
-                    className="flex items-center justify-between py-2.5"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-2 h-2 rounded-full ${config.dotColor}`} />
-                      <span className="text-sm text-slate-600">
-                        {config.label}
-                      </span>
-                    </div>
-                    <span className="text-sm font-semibold text-slate-900 tabular-nums">{count}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-lg p-5">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-[#e8eef4] flex items-center justify-center">
-                <Zap size={16} className="text-[#1e3a5f]" strokeWidth={1.5} />
-              </div>
-              <span className="text-sm font-semibold text-slate-900">Procesamiento IA</span>
-            </div>
-            <div className="text-2xl font-semibold text-slate-900 tabular-nums">0,03 €</div>
-            <div className="text-xs text-slate-500 mt-1">Coste medio por ficha</div>
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <div className="text-xs text-slate-500">Total este mes</div>
-              <div className="text-xl font-semibold text-slate-900 tabular-nums mt-1">
-                {costeIA} €
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
