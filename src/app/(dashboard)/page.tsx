@@ -7,7 +7,7 @@ import {
   Plus,
   Package,
   Eye,
-  Download,
+  FileText,
   Trash2,
 } from "lucide-react";
 import { StatCard } from "@/components/ui/StatCard";
@@ -19,9 +19,7 @@ import { StatusDonutChart } from "@/components/dashboard/StatusDonutChart";
 import { DatasheetsLineChart } from "@/components/dashboard/DatasheetsLineChart";
 import { useDatasheets } from "@/hooks/useDatasheets";
 import { useTenant } from "@/contexts/TenantContext";
-import { useTemplates } from "@/hooks/useTemplates";
 import { useToast } from "@/contexts/ToastContext";
-import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
 import { canDeleteDatasheet } from "@/lib/permissions";
 import type { Datasheet } from "@/lib/supabase/types";
 
@@ -31,24 +29,10 @@ export default function DashboardPage() {
   const { datasheets, loading: datasheetsLoading, deleteDatasheet } = useDatasheets({
     tenantId: tenant?.id,
   });
-  const { templates } = useTemplates({ tenantId: tenant?.id });
   const { toast } = useToast();
   const [confirmDelete, setConfirmDelete] = useState<Datasheet | null>(null);
 
   const loading = tenantLoading || datasheetsLoading;
-
-  const handleDownloadPdf = async (datasheet: Datasheet) => {
-    try {
-      const template =
-        templates.find((t) => t.id === datasheet.template_id) ||
-        templates.find((t) => t.is_default && t.template_type === "single") ||
-        null;
-      await generateFichaPdf(datasheet, datasheet.id, template);
-      toast.success("PDF exportado correctamente");
-    } catch {
-      toast.error("Error al exportar el PDF");
-    }
-  };
 
   const handleConfirmDelete = async () => {
     if (!confirmDelete) return;
@@ -227,9 +211,9 @@ export default function DashboardPage() {
                               onClick: () => router.push(`/fichas/${f.id}`),
                             },
                             {
-                              label: "Descargar PDF",
-                              icon: <Download size={16} strokeWidth={1.5} />,
-                              onClick: () => handleDownloadPdf(f),
+                              label: "Ver PDF",
+                              icon: <FileText size={16} strokeWidth={1.5} />,
+                              onClick: () => router.push(`/fichas/${f.id}/pdf`),
                             },
                             { type: "divider" as const },
                             {

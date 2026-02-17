@@ -102,12 +102,18 @@ function resolveLayout(template?: Template | null): LayoutConfig {
   };
 }
 
+// ── Result type ─────────────────────────────────
+export interface GeneratedPdf {
+  blob: Blob;
+  filename: string;
+}
+
 // ── Main export ─────────────────────────────────
 export async function generateFichaPdf(
   datasheet: Datasheet,
   datasheetId: string,
   template?: Template | null
-): Promise<void> {
+): Promise<GeneratedPdf> {
   const BRAND = resolveBrand(template);
   const MARGIN = resolveMargin(template);
   const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
@@ -167,13 +173,34 @@ export async function generateFichaPdf(
   // ─── Footer ────────────────────────────────────
   drawFooter(doc, BRAND, MARGIN);
 
-  // ─── Download ──────────────────────────────────
+  // ─── Build result ─────────────────────────────
   const filename = [datasheet.project_code, datasheet.article_name]
     .filter(Boolean)
     .join("_")
     .replace(/\s+/g, "_");
 
-  doc.save(`${filename || "ficha"}.pdf`);
+  const blob = doc.output("blob");
+
+  return { blob, filename: `${filename || "ficha"}.pdf` };
+}
+
+/**
+ * Generate the PDF and trigger an immediate browser download.
+ */
+export async function downloadFichaPdf(
+  datasheet: Datasheet,
+  datasheetId: string,
+  template?: Template | null
+): Promise<void> {
+  const { blob, filename } = await generateFichaPdf(datasheet, datasheetId, template);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ── Source image renderer ───────────────────────

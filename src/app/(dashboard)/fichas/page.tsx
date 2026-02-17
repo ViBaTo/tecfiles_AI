@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Plus,
@@ -11,20 +12,25 @@ import {
   LayoutGrid,
   List,
   Eye,
-  Download,
+  FileText,
   Trash2,
+  Layers,
+  SendHorizontal,
+  CheckCircle2,
+  XCircle,
+  Globe,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { EstadoBadge } from "@/components/ui/EstadoBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { ActionMenu, type ActionMenuEntry } from "@/components/ui/ActionMenu";
 import { ProductCard } from "@/components/products/ProductCard";
 import { useDatasheets } from "@/hooks/useDatasheets";
+import type { DatasheetWithBatch } from "@/hooks/useDatasheets";
 import { useTenant } from "@/contexts/TenantContext";
-import { useTemplates } from "@/hooks/useTemplates";
 import { useToast } from "@/contexts/ToastContext";
-import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
-import { canDeleteDatasheet } from "@/lib/permissions";
-import type { DatasheetStatus, Datasheet } from "@/lib/supabase/types";
+import { canDeleteDatasheet, getAllowedTransitions } from "@/lib/permissions";
+import type { DatasheetStatus } from "@/lib/supabase/types";
 
 const STATUS_OPTIONS: { value: DatasheetStatus | "all"; label: string }[] = [
   { value: "all", label: "Todos los estados" },
@@ -37,29 +43,31 @@ const STATUS_OPTIONS: { value: DatasheetStatus | "all"; label: string }[] = [
 ];
 
 export default function FichasPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DatasheetStatus | "all">("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
-  const [confirmDelete, setConfirmDelete] = useState<Datasheet | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<DatasheetWithBatch | null>(null);
   const { tenant, tenantUser, loading: tenantLoading } = useTenant();
-  const { datasheets, loading: datasheetsLoading, deleteDatasheet } = useDatasheets({
+  const { datasheets, loading: datasheetsLoading, deleteDatasheet, updateDatasheetStatus } = useDatasheets({
     tenantId: tenant?.id,
   });
-  const { templates } = useTemplates({ tenantId: tenant?.id });
   const { toast } = useToast();
 
   const loading = tenantLoading || datasheetsLoading;
 
-  const handleDownloadPdf = async (datasheet: Datasheet) => {
-    try {
-      const template =
-        templates.find((t) => t.id === datasheet.template_id) ||
-        templates.find((t) => t.is_default && t.template_type === "single") ||
-        null;
-      await generateFichaPdf(datasheet, datasheet.id, template);
-      toast.success("PDF exportado correctamente");
-    } catch {
-      toast.error("Error al exportar el PDF");
+  const handleStatusChange = async (datasheet: DatasheetWithBatch, newStatus: DatasheetStatus) => {
+    const { error: err } = await updateDatasheetStatus(datasheet.id, newStatus);
+    if (err) {
+      toast.error("Error al cambiar el estado");
+    } else {
+      const statusLabels: Record<string, string> = {
+        review: "en revisión",
+        approved: "aprobado",
+        draft: "borrador",
+        published: "publicado",
+      };
+      toast.success(`Estado cambiado a ${statusLabels[newStatus] || newStatus}`);
     }
   };
 
@@ -92,6 +100,57 @@ export default function FichasPage() {
   const clearFilters = () => {
     setSearch("");
     setStatusFilter("all");
+  };
+
+  const STATUS_TRANSITION_META: Record<string, { label: string; icon: React.ReactNode }> = {
+    review: { label: "Enviar a revisión", icon: <SendHorizontal size={16} strokeWidth={1.5} /> },
+    approved: { label: "Aprobar", icon: <CheckCircle2 size={16} strokeWidth={1.5} /> },
+    draft: { label: "Devolver a borrador", icon: <XCircle size={16} strokeWidth={1.5} /> },
+    published: { label: "Publicar", icon: <Globe size={16} strokeWidth={1.5} /> },
+  };
+
+  const buildTableRowMenu = (ficha: DatasheetWithBatch): ActionMenuEntry[] => {
+    const transitions = getAllowedTransitions(tenantUser?.role, ficha.status);
+
+    const statusItems: ActionMenuEntry[] =
+      transitions.length > 0
+        ? [
+            { type: "divider" as const } as ActionMenuEntry,
+            ...transitions.map((status) => {
+              const meta = STATUS_TRANSITION_META[status] || { label: status, icon: null };
+              return {
+                label: meta.label,
+                icon: meta.icon,
+                onClick: () => handleStatusChange(ficha, status),
+              } as ActionMenuEntry;
+            }),
+          ]
+        : [];
+
+    return [
+      {
+        label: "Ver ficha",
+        icon: <Eye size={16} strokeWidth={1.5} />,
+        onClick: () => router.push(`/fichas/${ficha.id}`),
+      },
+      {
+        label: "Ver PDF",
+        icon: <FileText size={16} strokeWidth={1.5} />,
+        onClick: () => router.push(`/fichas/${ficha.id}/pdf`),
+      },
+      ...statusItems,
+      ...(canDeleteDatasheet(tenantUser?.role)
+        ? [
+            { type: "divider" as const } as ActionMenuEntry,
+            {
+              label: "Eliminar",
+              icon: <Trash2 size={16} strokeWidth={1.5} />,
+              onClick: () => setConfirmDelete(ficha),
+              danger: true,
+            } as ActionMenuEntry,
+          ]
+        : []),
+    ];
   };
 
   const formatDate = (dateString: string) => {
@@ -230,8 +289,9 @@ export default function FichasPage() {
             <ProductCard
               key={product.id}
               product={product}
-              onDownload={() => handleDownloadPdf(product)}
               onDelete={canDeleteDatasheet(tenantUser?.role) ? () => setConfirmDelete(product) : undefined}
+              allowedTransitions={getAllowedTransitions(tenantUser?.role, product.status)}
+              onStatusChange={(newStatus) => handleStatusChange(product, newStatus)}
             />
           ))}
         </div>
@@ -250,6 +310,9 @@ export default function FichasPage() {
                   </th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 bg-slate-50">
                     Material
+                  </th>
+                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 bg-slate-50">
+                    Lote
                   </th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 bg-slate-50">
                     Estado
@@ -288,36 +351,27 @@ export default function FichasPage() {
                       {ficha.material || "-"}
                     </td>
                     <td className="px-4 py-3">
+                      {ficha.batch_name ? (
+                        <Link
+                          href="/lotes"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors duration-150"
+                        >
+                          <Layers size={12} strokeWidth={2} />
+                          {ficha.batch_name}
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <EstadoBadge estado={ficha.status} />
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500">
                       {formatDate(ficha.created_at)}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <Link
-                          href={`/fichas/${ficha.id}`}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150"
-                          title="Ver ficha"
-                        >
-                          <Eye size={16} strokeWidth={1.5} />
-                        </Link>
-                        <button
-                          onClick={() => handleDownloadPdf(ficha)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150"
-                          title="Descargar PDF"
-                        >
-                          <Download size={16} strokeWidth={1.5} />
-                        </button>
-                        {canDeleteDatasheet(tenantUser?.role) && (
-                          <button
-                            onClick={() => setConfirmDelete(ficha)}
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors duration-150"
-                            title="Eliminar"
-                          >
-                            <Trash2 size={16} strokeWidth={1.5} />
-                          </button>
-                        )}
+                      <div className="flex items-center justify-end">
+                        <ActionMenu items={buildTableRowMenu(ficha)} />
                       </div>
                     </td>
                   </tr>

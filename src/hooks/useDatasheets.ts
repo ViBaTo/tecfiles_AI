@@ -4,6 +4,10 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Datasheet, DatasheetStatus } from "@/lib/supabase/types";
 
+export type DatasheetWithBatch = Datasheet & {
+  batch_name?: string | null;
+};
+
 interface UseDatasheetOptions {
   tenantId?: string;
   status?: DatasheetStatus | DatasheetStatus[];
@@ -12,7 +16,7 @@ interface UseDatasheetOptions {
 
 export function useDatasheets(options: UseDatasheetOptions = {}) {
   const { tenantId, status, limit = 50 } = options;
-  const [datasheets, setDatasheets] = useState<Datasheet[]>([]);
+  const [datasheets, setDatasheets] = useState<DatasheetWithBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
@@ -29,7 +33,7 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
 
     let query = supabase
       .from("ds_datasheets")
-      .select("*")
+      .select("*, ds_batch_jobs(name)")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -48,7 +52,14 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
       setError(fetchError.message);
       setDatasheets([]);
     } else {
-      setDatasheets(data || []);
+      const mapped: DatasheetWithBatch[] = (data || []).map((row: Record<string, unknown>) => {
+        const batchData = row.ds_batch_jobs as { name: string | null } | null;
+        return {
+          ...row,
+          batch_name: batchData?.name ?? null,
+        } as DatasheetWithBatch;
+      });
+      setDatasheets(mapped);
     }
 
     setLoading(false);
@@ -82,6 +93,27 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
       supabase.removeChannel(channel);
     };
   }, [tenantId, supabase, fetchDatasheets]);
+
+  const updateDatasheetStatus = useCallback(
+    async (datasheetId: string, newStatus: DatasheetStatus) => {
+      const { error: updateError } = await supabase
+        .from("ds_datasheets")
+        .update({ status: newStatus })
+        .eq("id", datasheetId);
+
+      if (updateError) {
+        return { error: updateError.message };
+      }
+
+      setDatasheets((prev) =>
+        prev.map((ds) =>
+          ds.id === datasheetId ? { ...ds, status: newStatus } : ds
+        )
+      );
+      return { error: null };
+    },
+    [supabase]
+  );
 
   const deleteDatasheet = useCallback(
     async (datasheetId: string, sourceFileUrl?: string | null) => {
@@ -119,6 +151,7 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
     loading,
     error,
     refetch: fetchDatasheets,
+    updateDatasheetStatus,
     deleteDatasheet,
   };
 }

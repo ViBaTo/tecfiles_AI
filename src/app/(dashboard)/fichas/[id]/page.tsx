@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, FileText, RefreshCw, Download, Loader } from 'lucide-react'
+import { ArrowLeft, FileText, RefreshCw, Loader } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { EstadoBadge } from '@/components/ui/EstadoBadge'
 import { FichaDetailSkeleton } from '@/components/ui/Skeleton'
@@ -16,9 +16,7 @@ import { TechnicalSpecsSection } from '@/components/fichas/TechnicalSpecsSection
 import { ComponentsSection } from '@/components/fichas/ComponentsSection'
 import { DescriptionSection } from '@/components/fichas/DescriptionSection'
 import { StatusActions } from '@/components/fichas/StatusActions'
-import { generateFichaPdf } from '@/lib/pdf/generateFichaPdf'
 import { useTenant } from '@/contexts/TenantContext'
-import { useTemplates } from '@/hooks/useTemplates'
 import type { Datasheet, DatasheetStatus } from '@/lib/supabase/types'
 import { canExtract } from '@/lib/permissions'
 
@@ -31,11 +29,9 @@ export default function FichaDetailPage({ params }: PageProps) {
   const { datasheet, loading, error, updateDatasheet, refetch } =
     useDatasheet(id)
   const { tenant, tenantUser } = useTenant()
-  const { templates } = useTemplates({ tenantId: tenant?.id })
   const { toast } = useToast()
   const [isGenerating, setIsGenerating] = useState(false)
   const [isExtracting, setIsExtracting] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
   const [selectedLanguage, setSelectedLanguage] = useState('es')
   const languageInitialized = useRef(false)
 
@@ -124,25 +120,6 @@ export default function FichaDetailPage({ params }: PageProps) {
     await updateDatasheet(updates)
   }
 
-  const handleExportPdf = async () => {
-    if (!datasheet) return
-    setIsExporting(true)
-    try {
-      // Use datasheet's template, or the tenant's default "single" template
-      const template =
-        templates.find((t) => t.id === datasheet.template_id) ||
-        templates.find((t) => t.is_default && t.template_type === 'single') ||
-        null
-      await generateFichaPdf(datasheet, id, template)
-      toast.success('PDF exportado correctamente')
-    } catch (err) {
-      console.error('PDF export error:', err)
-      toast.error('Error al exportar el PDF')
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
   // ── Loading state ─────────────────────────────
   if (loading) {
     return <FichaDetailSkeleton />
@@ -217,22 +194,13 @@ export default function FichaDetailPage({ params }: PageProps) {
                   {isExtracting ? 'Extrayendo...' : 'Re-extraer'}
                 </button>
               )}
-              <button
-                onClick={handleExportPdf}
-                disabled={isExporting}
-                className='inline-flex items-center gap-2 text-sm font-medium text-slate-700 px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150 disabled:opacity-50'
+              <Link
+                href={`/fichas/${id}/pdf`}
+                className='inline-flex items-center gap-2 text-sm font-medium text-slate-700 px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150'
               >
-                {isExporting ? (
-                  <Loader
-                    size={16}
-                    className='animate-spin'
-                    strokeWidth={1.5}
-                  />
-                ) : (
-                  <Download size={16} strokeWidth={1.5} />
-                )}
-                {isExporting ? 'Exportando...' : 'Exportar PDF'}
-              </button>
+                <FileText size={16} strokeWidth={1.5} />
+                Ver PDF
+              </Link>
             </div>
           }
         />

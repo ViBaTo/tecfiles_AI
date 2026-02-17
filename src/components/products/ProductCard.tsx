@@ -2,18 +2,27 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, Download, Trash2 } from "lucide-react";
+import { Eye, FileText, Trash2, Layers, SendHorizontal, CheckCircle2, XCircle, Globe } from "lucide-react";
 import { EstadoBadge } from "@/components/ui/EstadoBadge";
 import { ActionMenu, type ActionMenuEntry } from "@/components/ui/ActionMenu";
-import type { Datasheet } from "@/lib/supabase/types";
+import type { DatasheetWithBatch } from "@/hooks/useDatasheets";
+import type { DatasheetStatus } from "@/lib/supabase/types";
+
+const STATUS_TRANSITION_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  review: { label: "Enviar a revisión", icon: <SendHorizontal size={16} strokeWidth={1.5} /> },
+  approved: { label: "Aprobar", icon: <CheckCircle2 size={16} strokeWidth={1.5} /> },
+  draft: { label: "Devolver a borrador", icon: <XCircle size={16} strokeWidth={1.5} /> },
+  published: { label: "Publicar", icon: <Globe size={16} strokeWidth={1.5} /> },
+};
 
 interface ProductCardProps {
-  product: Datasheet;
-  onDownload?: () => void;
+  product: DatasheetWithBatch;
   onDelete?: () => void;
+  allowedTransitions?: DatasheetStatus[];
+  onStatusChange?: (newStatus: DatasheetStatus) => void;
 }
 
-export function ProductCard({ product, onDownload, onDelete }: ProductCardProps) {
+export function ProductCard({ product, onDelete, allowedTransitions = [], onStatusChange }: ProductCardProps) {
   const router = useRouter();
 
   const formatRelativeTime = (dateString: string) => {
@@ -33,21 +42,33 @@ export function ProductCard({ product, onDownload, onDelete }: ProductCardProps)
     });
   };
 
+  const statusItems: ActionMenuEntry[] =
+    allowedTransitions.length > 0 && onStatusChange
+      ? [
+          { type: "divider" as const } as ActionMenuEntry,
+          ...allowedTransitions.map((status) => {
+            const meta = STATUS_TRANSITION_META[status] || { label: status, icon: null };
+            return {
+              label: meta.label,
+              icon: meta.icon,
+              onClick: () => onStatusChange(status),
+            } as ActionMenuEntry;
+          }),
+        ]
+      : [];
+
   const menuItems: ActionMenuEntry[] = [
     {
       label: "Ver ficha",
       icon: <Eye size={16} strokeWidth={1.5} />,
       onClick: () => router.push(`/fichas/${product.id}`),
     },
-    ...(onDownload
-      ? [
-          {
-            label: "Descargar PDF",
-            icon: <Download size={16} strokeWidth={1.5} />,
-            onClick: onDownload,
-          } as ActionMenuEntry,
-        ]
-      : []),
+    {
+      label: "Ver PDF",
+      icon: <FileText size={16} strokeWidth={1.5} />,
+      onClick: () => router.push(`/fichas/${product.id}/pdf`),
+    },
+    ...statusItems,
     ...(onDelete
       ? [
           { type: "divider" as const } as ActionMenuEntry,
@@ -91,6 +112,20 @@ export function ProductCard({ product, onDownload, onDelete }: ProductCardProps)
           </span>
         )}
       </div>
+
+      {/* Batch tag */}
+      {product.batch_name && (
+        <div className="mb-3">
+          <Link
+            href="/lotes"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[11px] font-medium text-blue-600 hover:bg-blue-100 transition-colors duration-150"
+          >
+            <Layers size={10} strokeWidth={2} />
+            {product.batch_name}
+          </Link>
+        </div>
+      )}
 
       {/* Status + timestamp */}
       <div className="flex items-center justify-between">

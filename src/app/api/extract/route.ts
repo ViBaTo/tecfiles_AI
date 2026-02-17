@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { pdf } from 'pdf-to-img'
 import type { SchemaField } from '@/lib/supabase/types'
 
 // Lazy initialization to avoid build-time errors
@@ -36,9 +37,10 @@ function buildExtractionPrompt(
   schemaDescription: string | null
 ): string {
   // Build the technical specs portion from schema fields
-  const specsSchema = schemaFields && schemaFields.length > 0
-    ? buildSpecsSchemaFromFields(schemaFields)
-    : DEFAULT_SPECS_SCHEMA
+  const specsSchema =
+    schemaFields && schemaFields.length > 0
+      ? buildSpecsSchemaFromFields(schemaFields)
+      : DEFAULT_SPECS_SCHEMA
 
   const customInstructions = schemaDescription
     ? `\n\nINSTRUCCIONES ADICIONALES DEL ESQUEMA:\n${schemaDescription}`
@@ -148,6 +150,77 @@ interface ExtractedData {
   metadata?: Record<string, unknown>
 }
 
+/**
+ * Attempt to extract data from a PDF using Claude.
+ * Primary: send the raw PDF as a document content block.
+ * Fallback: if Claude rejects the PDF (common with CAD exports), convert
+ * each page to a PNG image and retry with image content blocks.
+ */
+async function callClaudeForExtraction(
+  anthropic: Anthropic,
+  pdfBuffer: ArrayBuffer,
+  extractionPrompt: string
+): Promise<Anthropic.Message> {
+  const pdfBase64 = Buffer.from(pdfBuffer).toString('base64')
+
+  try {
+    return await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: pdfBase64
+              }
+            },
+            { type: 'text', text: extractionPrompt }
+          ]
+        }
+      ]
+    })
+  } catch (err) {
+    const isUnprocessablePdf =
+      err instanceof Anthropic.BadRequestError &&
+      typeof err.message === 'string' &&
+      err.message.includes('Could not process PDF')
+
+    if (!isUnprocessablePdf) throw err
+
+    console.log(
+      'PDF rejected by Claude, falling back to image-based extraction'
+    )
+
+    const document = await pdf(Buffer.from(pdfBuffer), { scale: 2 })
+    const imageContents: Anthropic.MessageCreateParams['messages'][0]['content'] =
+      []
+
+    for await (const pageBuffer of document) {
+      imageContents.push({
+        type: 'image' as const,
+        source: {
+          type: 'base64' as const,
+          media_type: 'image/png' as const,
+          data: Buffer.from(pageBuffer).toString('base64')
+        }
+      })
+    }
+
+    imageContents.push({ type: 'text' as const, text: extractionPrompt })
+
+    return await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: imageContents }]
+    })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -223,7 +296,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const extractionPrompt = buildExtractionPrompt(tenantName, schemaFields, schemaDescription)
+    const extractionPrompt = buildExtractionPrompt(
+      tenantName,
+      schemaFields,
+      schemaDescription
+    )
 
     // 2. Update processing job to 'processing'
     await supabaseAdmin
@@ -267,32 +344,12 @@ export async function POST(request: NextRequest) {
       pdfBuffer = await pdfResponse.arrayBuffer()
     }
 
-    const pdfBase64 = Buffer.from(pdfBuffer).toString('base64')
-
-    // 4. Send to Claude Vision for extraction
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: pdfBase64
-              }
-            },
-            {
-              type: 'text',
-              text: extractionPrompt
-            }
-          ]
-        }
-      ]
-    })
+    // 4. Send to Claude Vision for extraction (with image fallback for problematic PDFs)
+    const message = await callClaudeForExtraction(
+      anthropic,
+      pdfBuffer,
+      extractionPrompt
+    )
 
     // 5. Parse the response
     const responseText =
@@ -345,7 +402,7 @@ export async function POST(request: NextRequest) {
     // Merge all technical detail sections into a single JSONB object
     const technicalSpecs: Record<string, unknown> = {
       ...(extractedData.especificaciones_tecnicas || {}),
-      ...(extractedData.instalacion || {}),
+      ...(extractedData.instalacion || {})
     }
     if (extractedData.driver) {
       technicalSpecs.driver = extractedData.driver
