@@ -1,15 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { MoreHorizontal } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Eye, Download, Trash2 } from "lucide-react";
 import { EstadoBadge } from "@/components/ui/EstadoBadge";
+import { ActionMenu, type ActionMenuEntry } from "@/components/ui/ActionMenu";
 import type { Datasheet } from "@/lib/supabase/types";
 
 interface ProductCardProps {
   product: Datasheet;
+  onDownload?: () => void;
+  onDelete?: () => void;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, onDownload, onDelete }: ProductCardProps) {
+  const router = useRouter();
+
   const formatRelativeTime = (dateString: string) => {
     const now = new Date();
     const date = new Date(dateString);
@@ -27,6 +33,34 @@ export function ProductCard({ product }: ProductCardProps) {
     });
   };
 
+  const menuItems: ActionMenuEntry[] = [
+    {
+      label: "Ver ficha",
+      icon: <Eye size={16} strokeWidth={1.5} />,
+      onClick: () => router.push(`/fichas/${product.id}`),
+    },
+    ...(onDownload
+      ? [
+          {
+            label: "Descargar PDF",
+            icon: <Download size={16} strokeWidth={1.5} />,
+            onClick: onDownload,
+          } as ActionMenuEntry,
+        ]
+      : []),
+    ...(onDelete
+      ? [
+          { type: "divider" as const } as ActionMenuEntry,
+          {
+            label: "Eliminar",
+            icon: <Trash2 size={16} strokeWidth={1.5} />,
+            onClick: onDelete,
+            danger: true,
+          } as ActionMenuEntry,
+        ]
+      : []),
+  ];
+
   return (
     <Link
       href={`/fichas/${product.id}`}
@@ -41,15 +75,7 @@ export function ProductCard({ product }: ProductCardProps) {
             {product.project_code || "-"}
           </span>
         </div>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 opacity-0 group-hover:opacity-100"
-        >
-          <MoreHorizontal size={16} strokeWidth={1.5} />
-        </button>
+        <ActionMenu items={menuItems} />
       </div>
 
       {/* Category tags */}

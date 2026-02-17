@@ -5,16 +5,20 @@ import {
   Plus,
   Layers,
   Loader,
-  MoreHorizontal,
   Upload,
   X,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import { ActionMenu } from "@/components/ui/ActionMenu";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useBatchJobs } from "@/hooks/useBatchJobs";
-import { useTenant } from "@/hooks/useTenant";
+import { useTenant } from "@/contexts/TenantContext";
 import { useDatasheets } from "@/hooks/useDatasheets";
+import { useToast } from "@/contexts/ToastContext";
 import { createClient } from "@/lib/supabase/client";
+import type { BatchJob } from "@/lib/supabase/types";
 
 const STATUS_CONFIG: Record<string, { label: string; classes: string }> = {
   completed: {
@@ -43,10 +47,11 @@ type BatchMode = "upload" | "regenerate" | "re_extract";
 
 export default function LotesPage() {
   const { tenant } = useTenant();
-  const { batches, loading, error, createBatch } = useBatchJobs({
+  const { batches, loading, error, createBatch, deleteBatch } = useBatchJobs({
     tenantId: tenant?.id,
   });
   const { datasheets } = useDatasheets({ tenantId: tenant?.id });
+  const { toast } = useToast();
 
   const [showModal, setShowModal] = useState(false);
   const [batchMode, setBatchMode] = useState<BatchMode>("upload");
@@ -57,6 +62,34 @@ export default function LotesPage() {
   );
   const [batchLanguage, setBatchLanguage] = useState("es");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<BatchJob | null>(null);
+
+  const handleDeleteBatch = async () => {
+    if (!confirmDelete) return;
+    const { error: err } = await deleteBatch(confirmDelete.id);
+    if (err) {
+      toast.error("Error al eliminar el lote");
+    } else {
+      toast.success("Lote eliminado correctamente");
+    }
+    setConfirmDelete(null);
+  };
+
+  const handleReprocessBatch = (batch: BatchJob) => {
+    if (!batch.id || batch.status === "processing" || batch.status === "pending") return;
+    fetch("/api/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        batchId: batch.id,
+        datasheetIds: [],
+        mode: "regenerate",
+        language: "es",
+      }),
+    })
+      .then(() => toast.info("Reprocesamiento iniciado"))
+      .catch(() => toast.error("Error al reprocesar el lote"));
+  };
 
   const supabase = createClient();
 
@@ -127,6 +160,7 @@ export default function LotesPage() {
             .from("ds_datasheets")
             .insert({
               tenant_id: tenant.id,
+              batch_id: batchId,
               source_file_url: urlData.publicUrl,
               source_file_name: file.name,
               status: "uploading" as const,
@@ -156,9 +190,9 @@ export default function LotesPage() {
           datasheetIds.push(ds.id);
         }
 
-        // Trigger batch processing
+        // Trigger batch processing (fire-and-forget: real-time updates via useBatchJobs)
         if (datasheetIds.length > 0) {
-          await fetch("/api/batch", {
+          fetch("/api/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -167,7 +201,9 @@ export default function LotesPage() {
               mode: "extract_and_generate",
               language: batchLanguage,
             }),
-          });
+          }).catch((err) =>
+            console.error("Batch processing request failed:", err)
+          );
         }
       } else {
         // Regenerate or re-extract mode
@@ -182,7 +218,8 @@ export default function LotesPage() {
           throw new Error(result.error || "Failed to create batch");
         }
 
-        await fetch("/api/batch", {
+        // Fire-and-forget: real-time updates via useBatchJobs
+        fetch("/api/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -191,7 +228,9 @@ export default function LotesPage() {
             mode: batchMode,
             language: batchLanguage,
           }),
-        });
+        }).catch((err) =>
+          console.error("Batch processing request failed:", err)
+        );
       }
 
       // Reset and close
@@ -378,9 +417,24 @@ export default function LotesPage() {
                         {formatDate(batch.created_at)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 opacity-0 group-hover:opacity-100">
-                          <MoreHorizontal size={16} strokeWidth={1.5} />
-                        </button>
+                        <ActionMenu
+                          items={[
+                            {
+                              label: "Reprocesar",
+                              icon: <RefreshCw size={16} strokeWidth={1.5} />,
+                              onClick: () => handleReprocessBatch(batch),
+                              disabled: batch.status === "processing" || batch.status === "pending",
+                            },
+                            { type: "divider" as const },
+                            {
+                              label: "Eliminar",
+                              icon: <Trash2 size={16} strokeWidth={1.5} />,
+                              onClick: () => setConfirmDelete(batch),
+                              danger: true,
+                              disabled: batch.status === "processing",
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   );
@@ -390,6 +444,16 @@ export default function LotesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Eliminar lote"
+        description={`¿Seguro que quieres eliminar el lote "${confirmDelete?.name || "este lote"}"? Se eliminarán también todos los productos (fichas) creados en este lote y sus archivos asociados. Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar lote y productos"
+        danger
+        onConfirm={handleDeleteBatch}
+        onCancel={() => setConfirmDelete(null)}
+      />
 
       {/* New Batch Modal */}
       {showModal && (

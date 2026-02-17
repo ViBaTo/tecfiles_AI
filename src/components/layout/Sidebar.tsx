@@ -16,8 +16,8 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { useTenant } from "@/hooks/useTenant";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTenant } from "@/contexts/TenantContext";
 
 const NAV_ITEMS = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", href: "/" },

@@ -3,7 +3,7 @@
 import { Plus, LayoutTemplate, Check, Loader } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { useTemplates } from "@/hooks/useTemplates";
-import { useTenant } from "@/hooks/useTenant";
+import { useTenant } from "@/contexts/TenantContext";
 
 export default function PlantillasPage() {
   const { tenant } = useTenant();

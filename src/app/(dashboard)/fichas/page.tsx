@@ -13,14 +13,18 @@ import {
   Eye,
   Download,
   Trash2,
-  MoreHorizontal,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { EstadoBadge } from "@/components/ui/EstadoBadge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ProductCard } from "@/components/products/ProductCard";
 import { useDatasheets } from "@/hooks/useDatasheets";
-import { useTenant } from "@/hooks/useTenant";
-import type { DatasheetStatus } from "@/lib/supabase/types";
+import { useTenant } from "@/contexts/TenantContext";
+import { useTemplates } from "@/hooks/useTemplates";
+import { useToast } from "@/contexts/ToastContext";
+import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
+import { canDeleteDatasheet } from "@/lib/permissions";
+import type { DatasheetStatus, Datasheet } from "@/lib/supabase/types";
 
 const STATUS_OPTIONS: { value: DatasheetStatus | "all"; label: string }[] = [
   { value: "all", label: "Todos los estados" },
@@ -36,12 +40,39 @@ export default function FichasPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DatasheetStatus | "all">("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
-  const { tenant, loading: tenantLoading } = useTenant();
-  const { datasheets, loading: datasheetsLoading } = useDatasheets({
+  const [confirmDelete, setConfirmDelete] = useState<Datasheet | null>(null);
+  const { tenant, tenantUser, loading: tenantLoading } = useTenant();
+  const { datasheets, loading: datasheetsLoading, deleteDatasheet } = useDatasheets({
     tenantId: tenant?.id,
   });
+  const { templates } = useTemplates({ tenantId: tenant?.id });
+  const { toast } = useToast();
 
   const loading = tenantLoading || datasheetsLoading;
+
+  const handleDownloadPdf = async (datasheet: Datasheet) => {
+    try {
+      const template =
+        templates.find((t) => t.id === datasheet.template_id) ||
+        templates.find((t) => t.is_default && t.template_type === "single") ||
+        null;
+      await generateFichaPdf(datasheet, datasheet.id, template);
+      toast.success("PDF exportado correctamente");
+    } catch {
+      toast.error("Error al exportar el PDF");
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    const { error: err } = await deleteDatasheet(confirmDelete.id, confirmDelete.source_file_url);
+    if (err) {
+      toast.error("Error al eliminar la ficha");
+    } else {
+      toast.success("Ficha eliminada correctamente");
+    }
+    setConfirmDelete(null);
+  };
 
   // Filter datasheets
   const filteredDatasheets = datasheets.filter((f) => {
@@ -196,7 +227,12 @@ export default function FichasPage() {
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
           {filteredDatasheets.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              onDownload={() => handleDownloadPdf(product)}
+              onDelete={canDeleteDatasheet(tenantUser?.role) ? () => setConfirmDelete(product) : undefined}
+            />
           ))}
         </div>
       ) : (
@@ -258,7 +294,7 @@ export default function FichasPage() {
                       {formatDate(ficha.created_at)}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                      <div className="flex items-center justify-end gap-1">
                         <Link
                           href={`/fichas/${ficha.id}`}
                           className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150"
@@ -267,17 +303,21 @@ export default function FichasPage() {
                           <Eye size={16} strokeWidth={1.5} />
                         </Link>
                         <button
+                          onClick={() => handleDownloadPdf(ficha)}
                           className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150"
                           title="Descargar PDF"
                         >
                           <Download size={16} strokeWidth={1.5} />
                         </button>
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors duration-150"
-                          title="Eliminar"
-                        >
-                          <Trash2 size={16} strokeWidth={1.5} />
-                        </button>
+                        {canDeleteDatasheet(tenantUser?.role) && (
+                          <button
+                            onClick={() => setConfirmDelete(ficha)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors duration-150"
+                            title="Eliminar"
+                          >
+                            <Trash2 size={16} strokeWidth={1.5} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -287,6 +327,16 @@ export default function FichasPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Eliminar ficha"
+        description={`¿Seguro que quieres eliminar "${confirmDelete?.article_name || "esta ficha"}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }

@@ -164,6 +164,7 @@ export interface Database {
         Row: {
           id: string;
           tenant_id: string;
+          batch_id: string | null;
           schema_id: string | null;
           template_id: string | null;
           project_code: string | null;
@@ -191,6 +192,7 @@ export interface Database {
         Insert: {
           id?: string;
           tenant_id: string;
+          batch_id?: string | null;
           schema_id?: string | null;
           template_id?: string | null;
           project_code?: string | null;
@@ -218,6 +220,7 @@ export interface Database {
         Update: {
           id?: string;
           tenant_id?: string;
+          batch_id?: string | null;
           schema_id?: string | null;
           template_id?: string | null;
           project_code?: string | null;

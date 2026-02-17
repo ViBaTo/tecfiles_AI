@@ -1,9 +1,15 @@
 "use client";
 
-import { Plus, Users, Mail, Shield, MoreHorizontal, Loader } from "lucide-react";
+import { useState } from "react";
+import { Plus, Users, Mail, Shield, Loader, Trash2, UserCog } from "lucide-react";
 import { Header } from "@/components/layout/Header";
-import { useTenantUsers } from "@/hooks/useTenantUsers";
-import { useTenant } from "@/hooks/useTenant";
+import { ActionMenu, type ActionMenuEntry } from "@/components/ui/ActionMenu";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useTenantUsers, type TenantUserWithProfile } from "@/hooks/useTenantUsers";
+import { useTenant } from "@/contexts/TenantContext";
+import { useToast } from "@/contexts/ToastContext";
+import { canManageUsers } from "@/lib/permissions";
+import type { UserRole } from "@/lib/supabase/types";
 
 const ROLE_CONFIG = {
   admin: {
@@ -21,8 +27,62 @@ const ROLE_CONFIG = {
 };
 
 export default function UsuariosPage() {
-  const { tenant } = useTenant();
-  const { users, loading, error } = useTenantUsers({ tenantId: tenant?.id });
+  const { tenant, tenantUser: currentUser } = useTenant();
+  const { users, loading, error, updateRole, removeUser } = useTenantUsers({ tenantId: tenant?.id });
+  const { toast } = useToast();
+  const [confirmRemove, setConfirmRemove] = useState<TenantUserWithProfile | null>(null);
+
+  const isAdmin = canManageUsers(currentUser?.role);
+
+  const handleChangeRole = async (membershipId: string, newRole: UserRole) => {
+    const { error: err } = await updateRole(membershipId, newRole);
+    if (err) {
+      toast.error("Error al cambiar el rol");
+    } else {
+      toast.success("Rol actualizado correctamente");
+    }
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!confirmRemove) return;
+    const { error: err } = await removeUser(confirmRemove.id);
+    if (err) {
+      toast.error("Error al eliminar el usuario");
+    } else {
+      toast.success("Usuario eliminado correctamente");
+    }
+    setConfirmRemove(null);
+  };
+
+  const buildUserMenuItems = (user: TenantUserWithProfile): ActionMenuEntry[] => {
+    const isSelf = user.user_id === currentUser?.user_id;
+    const roles: { value: UserRole; label: string }[] = [
+      { value: "admin", label: "Administrador" },
+      { value: "editor", label: "Editor" },
+      { value: "reviewer", label: "Revisor" },
+    ];
+
+    const roleItems: ActionMenuEntry[] = roles
+      .filter((r) => r.value !== user.role)
+      .map((r) => ({
+        label: `Cambiar a ${r.label}`,
+        icon: <UserCog size={16} strokeWidth={1.5} />,
+        onClick: () => handleChangeRole(user.id, r.value),
+        disabled: !isAdmin || isSelf,
+      }));
+
+    return [
+      ...roleItems,
+      { type: "divider" as const },
+      {
+        label: "Eliminar usuario",
+        icon: <Trash2 size={16} strokeWidth={1.5} />,
+        onClick: () => setConfirmRemove(user),
+        danger: true,
+        disabled: !isAdmin || isSelf,
+      },
+    ];
+  };
 
   return (
     <div>
@@ -133,9 +193,7 @@ export default function UsuariosPage() {
                         : "Nunca"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 opacity-0 group-hover:opacity-100">
-                        <MoreHorizontal size={16} strokeWidth={1.5} />
-                      </button>
+                      <ActionMenu items={buildUserMenuItems(user)} />
                     </td>
                   </tr>
                 );
@@ -144,6 +202,16 @@ export default function UsuariosPage() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmRemove}
+        title="Eliminar usuario"
+        description={`¿Seguro que quieres eliminar a "${confirmRemove?.display_name || "este usuario"}" de la organización? Perderá acceso inmediatamente.`}
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={handleConfirmRemove}
+        onCancel={() => setConfirmRemove(null)}
+      />
     </div>
   );
 }

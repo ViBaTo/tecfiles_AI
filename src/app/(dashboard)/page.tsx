@@ -1,19 +1,29 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   FileText,
   Plus,
-  MoreHorizontal,
   Package,
   Zap,
+  Eye,
+  Download,
+  Trash2,
 } from "lucide-react";
 import { StatCard } from "@/components/ui/StatCard";
 import { EstadoBadge } from "@/components/ui/EstadoBadge";
 import { Header } from "@/components/layout/Header";
+import { ActionMenu } from "@/components/ui/ActionMenu";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useDatasheets } from "@/hooks/useDatasheets";
-import { useTenant } from "@/hooks/useTenant";
-import type { DatasheetStatus } from "@/lib/supabase/types";
+import { useTenant } from "@/contexts/TenantContext";
+import { useTemplates } from "@/hooks/useTemplates";
+import { useToast } from "@/contexts/ToastContext";
+import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
+import { canDeleteDatasheet } from "@/lib/permissions";
+import type { DatasheetStatus, Datasheet } from "@/lib/supabase/types";
 
 const STATUS_CONFIG: Record<DatasheetStatus, { label: string; dotColor: string }> = {
   uploading: { label: "Subiendo", dotColor: "bg-blue-500" },
@@ -26,12 +36,40 @@ const STATUS_CONFIG: Record<DatasheetStatus, { label: string; dotColor: string }
 };
 
 export default function DashboardPage() {
-  const { tenant, loading: tenantLoading } = useTenant();
-  const { datasheets, loading: datasheetsLoading } = useDatasheets({
+  const router = useRouter();
+  const { tenant, tenantUser, loading: tenantLoading } = useTenant();
+  const { datasheets, loading: datasheetsLoading, deleteDatasheet } = useDatasheets({
     tenantId: tenant?.id,
   });
+  const { templates } = useTemplates({ tenantId: tenant?.id });
+  const { toast } = useToast();
+  const [confirmDelete, setConfirmDelete] = useState<Datasheet | null>(null);
 
   const loading = tenantLoading || datasheetsLoading;
+
+  const handleDownloadPdf = async (datasheet: Datasheet) => {
+    try {
+      const template =
+        templates.find((t) => t.id === datasheet.template_id) ||
+        templates.find((t) => t.is_default && t.template_type === "single") ||
+        null;
+      await generateFichaPdf(datasheet, datasheet.id, template);
+      toast.success("PDF exportado correctamente");
+    } catch {
+      toast.error("Error al exportar el PDF");
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    const { error: err } = await deleteDatasheet(confirmDelete.id, confirmDelete.source_file_url);
+    if (err) {
+      toast.error("Error al eliminar la ficha");
+    } else {
+      toast.success("Ficha eliminada correctamente");
+    }
+    setConfirmDelete(null);
+  };
 
   // Calculate stats
   const totalFichas = datasheets.length;
@@ -175,9 +213,28 @@ export default function DashboardPage() {
                         {formatRelativeTime(f.updated_at || f.created_at)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 opacity-0 group-hover:opacity-100">
-                          <MoreHorizontal size={16} strokeWidth={1.5} />
-                        </button>
+                        <ActionMenu
+                          items={[
+                            {
+                              label: "Ver ficha",
+                              icon: <Eye size={16} strokeWidth={1.5} />,
+                              onClick: () => router.push(`/fichas/${f.id}`),
+                            },
+                            {
+                              label: "Descargar PDF",
+                              icon: <Download size={16} strokeWidth={1.5} />,
+                              onClick: () => handleDownloadPdf(f),
+                            },
+                            { type: "divider" as const },
+                            {
+                              label: "Eliminar",
+                              icon: <Trash2 size={16} strokeWidth={1.5} />,
+                              onClick: () => setConfirmDelete(f),
+                              danger: true,
+                              disabled: !canDeleteDatasheet(tenantUser?.role),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -233,6 +290,16 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Eliminar ficha"
+        description={`¿Seguro que quieres eliminar "${confirmDelete?.article_name || "esta ficha"}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }

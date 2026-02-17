@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { useFileUpload } from "@/hooks/useFileUpload";
-import { useTenant } from "@/hooks/useTenant";
+import { useTenant } from "@/contexts/TenantContext";
 
 const STEPS = [
   { num: 1, label: "Subir Archivo" },

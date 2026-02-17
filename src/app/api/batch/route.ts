@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// Allow up to 5 minutes for batch processing (requires compatible hosting plan)
+export const maxDuration = 300
+
 function getSupabaseAdmin() {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||

@@ -83,11 +83,43 @@ export function useDatasheets(options: UseDatasheetOptions = {}) {
     };
   }, [tenantId, supabase, fetchDatasheets]);
 
+  const deleteDatasheet = useCallback(
+    async (datasheetId: string, sourceFileUrl?: string | null) => {
+      // Delete associated file from storage if it exists
+      if (sourceFileUrl) {
+        try {
+          // Extract the storage path from the public URL
+          const url = new URL(sourceFileUrl);
+          const pathMatch = url.pathname.match(/\/storage\/v1\/object\/public\/datasheets\/(.+)/);
+          if (pathMatch?.[1]) {
+            await supabase.storage.from("datasheets").remove([decodeURIComponent(pathMatch[1])]);
+          }
+        } catch {
+          // Storage deletion is best-effort; proceed with DB deletion
+        }
+      }
+
+      const { error: deleteError } = await supabase
+        .from("ds_datasheets")
+        .delete()
+        .eq("id", datasheetId);
+
+      if (deleteError) {
+        return { error: deleteError.message };
+      }
+
+      setDatasheets((prev) => prev.filter((ds) => ds.id !== datasheetId));
+      return { error: null };
+    },
+    [supabase]
+  );
+
   return {
     datasheets,
     loading,
     error,
     refetch: fetchDatasheets,
+    deleteDatasheet,
   };
 }
 

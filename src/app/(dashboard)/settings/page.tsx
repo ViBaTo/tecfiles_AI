@@ -13,7 +13,7 @@ import {
   Eye,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
-import { useTenant } from "@/hooks/useTenant";
+import { useTenant } from "@/contexts/TenantContext";
 import { createClient } from "@/lib/supabase/client";
 import type {
   DescriptionPreferences,

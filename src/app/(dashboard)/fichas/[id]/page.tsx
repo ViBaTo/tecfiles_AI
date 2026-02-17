@@ -24,7 +24,7 @@ import { ComponentsSection } from "@/components/fichas/ComponentsSection";
 import { DescriptionSection } from "@/components/fichas/DescriptionSection";
 import { StatusActions } from "@/components/fichas/StatusActions";
 import { generateFichaPdf } from "@/lib/pdf/generateFichaPdf";
-import { useTenant } from "@/hooks/useTenant";
+import { useTenant } from "@/contexts/TenantContext";
 import { useTemplates } from "@/hooks/useTemplates";
 import type { DatasheetStatus } from "@/lib/supabase/types";
 import { canEditDatasheet, canExtract } from "@/lib/permissions";
